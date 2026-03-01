@@ -20,7 +20,8 @@ const {
   getProofsByAmount,
   activeMint,         
   switchMint,   
-  hydrated,   
+  hydrated,
+  currentProofs,   
 } = useProofStorage();
 
 
@@ -118,7 +119,7 @@ const handleSetMint = async () => {
     }
 
     let attempts = 0;
-    const maxAttempts = 12;
+    const maxAttempts = 10000;
 
     const intervalId = setInterval(async () => {
       attempts++;
@@ -162,73 +163,136 @@ const handleSetMint = async () => {
 
 const handleMelt = async () => {
   if (!wallet) {
-    setDataOutput({ error: "No wallet" });
+    setDataOutput({ error: "No wallet connected" });
     return;
   }
 
   const invoice = formData.meltInvoice?.trim();
   if (!invoice) {
-    setDataOutput({ error: "No invoice" });
+    setDataOutput({ error: "Please enter a Bolt11 invoice" });
     return;
   }
 
   try {
+    // Step 1: Create quote
     const quote = await wallet.createMeltQuoteBolt11(invoice);
-    setDataOutput({ "Melt quote": quote });
+    setDataOutput({
+      status: "Creating quote...",
+      meltQuote: quote
+    });
 
-    const totalNeeded = quote.amount + quote.fee_reserve;
+    const totalAmountNeeded = quote.amount + quote.fee_reserve;
 
-    // Better: use wallet.send() for selection + change handling (more reliable in cashu-ts)
-    const { send: proofsToSpend, returnChange } = await wallet.send(totalNeeded, currentProofs);
+    // ── DEBUG LOGS FOR PROOF SELECTION ──────────────────────────────────────────
+    console.log("Current wallet keyset ID:", wallet.keys?.id);
+    console.log("All stored proofs:", currentProofs.map(p => ({ 
+      amount: p.amount, 
+      id: p.id, 
+      secretPrefix: p.secret?.slice(0, 8) + "..." 
+    })));
+    console.log("Needed amount:", totalAmountNeeded);
+    // ─────────────────────────────────────────────────────────────────────────────
 
-    if (proofsToSpend.length === 0) {
-      alert("No suitable proofs for melt (balance may be fragmented)");
+    // Use ALL proofs that are small enough (ignore keyset filter for now)
+    const proofs = currentProofs.filter(p => p.amount <= totalAmountNeeded);
+
+    console.log("Selected proofs (all keysets):", proofs.map(p => p.amount));
+    console.log("Selected total:", proofs.reduce((sum, p) => sum + p.amount, 0));
+
+    if (proofs.length === 0 || proofs.reduce((sum, p) => sum + p.amount, 0) < totalAmountNeeded) {
+      setDataOutput({ 
+        error: "Insufficient balance", 
+        details: "No suitable proofs found. Total available: " + balance + " sat" 
+      });
+      alert("Insufficient balance");
       return;
     }
 
-    console.log("Proofs selected to spend:", proofsToSpend.map(p => ({amount: p.amount, secret: p.secret.slice(0,10)})));
-
-    const meltResult = await wallet.meltProofsBolt11(quote, proofsToSpend, {
-      keysetId: wallet.keys?.id,
+    // Step 2: Melt
+    const meltResult = await wallet.meltProofsBolt11(quote, proofs, {
+      keysetId: wallet.keys?.id, // still pass current keyset for the melt request
     });
 
-    console.log("Full meltResult:", JSON.stringify(meltResult, null, 2));
+    console.log("Full meltResult from library:", JSON.stringify(meltResult, null, 2));
 
-    if (meltResult.paid) {
-      // Remove spent proofs (critical!)
-      hookRemoveProofs(proofsToSpend);
+    // ── Workaround for wrapped "error" on success ──
+    let effectiveResult = meltResult;
+    let isWrappedError = false;
 
-      // Add change if any
-      if (meltResult.change?.length > 0 || returnChange?.length > 0) {
-        const changeToAdd = meltResult.change || returnChange || [];
-        hookAddProofs(changeToAdd);
-        console.log("Added change:", changeToAdd.map(p => ({amount: p.amount, secret: p.secret.slice(0,10)})));
-      }
-
-      // Force re-render + UI update (sometimes React misses state change)
-      setTimeout(() => {
-        setDataOutput(prev => ({
-          ...prev,
-          success: "Melt successful! Invoice paid.",
-          preimage: meltResult.preimage || "-",
-          spent: totalNeeded,
-          changeReceived: (meltResult.change || []).reduce((s, p) => s + p.amount, 0),
-          newBalanceEstimate: balance - totalNeeded + (meltResult.change || []).reduce((s, p) => s + p.amount, 0)
-        }));
-      }, 100);
-
-      setFormData(prev => ({ ...prev, meltInvoice: "" }));
-    } else {
-      setDataOutput({
-        error: "Mint paid invoice but meltResult.paid = false",
-        details: meltResult
-      });
+    if (meltResult.error && meltResult.details?.quote) {
+      console.warn("Mint/library wrapped success in 'error' → using inner details");
+      isWrappedError = true;
+      effectiveResult = meltResult.details;
     }
+
+    const isPaid = effectiveResult.paid === true ||
+                   effectiveResult.quote?.paid === true;
+
+    if (!isPaid) {
+      setDataOutput({
+        error: "Mint could not pay the invoice (or paid status missing)",
+        details: meltResult,
+        meltResultRaw: JSON.stringify(meltResult, null, 2)
+      });
+      return;
+    }
+
+    // ── Success path ──
+    console.log("Melt SUCCESS - removing spent proofs:", proofs.map(p => p.amount));
+    hookRemoveProofs(proofs);
+
+    console.log("Proofs removed. Current count:", currentProofs.length);
+
+    let changeAmount = 0;
+    const changeArray = effectiveResult.change || [];
+
+    if (Array.isArray(changeArray) && changeArray.length > 0) {
+      const readyChangeProofs = changeArray.map(p => ({
+        secret: p.secret,
+        C: p.C,
+        amount: p.amount,
+        id: p.id,
+      }));
+
+      if (readyChangeProofs.length > 0) {
+        console.log("Adding change proofs:", readyChangeProofs.map(p => p.amount));
+        hookAddProofs(readyChangeProofs);
+        changeAmount = readyChangeProofs.reduce((sum, p) => sum + p.amount, 0);
+
+        console.log("Proofs added. New count:", currentProofs.length);
+        console.log("Calculated balance right now:", balance);
+      } else {
+        console.warn("Change proofs array was empty after mapping");
+      }
+    } else {
+      console.warn("No change proofs found in response");
+    }
+
+    // Final success output – merge with previous data
+    setDataOutput(prev => ({
+      ...prev,
+      status: "Success",
+      success: `Melt OK - invoice paid! ${isWrappedError ? '(wrapped error workaround applied)' : ''}`,
+      preimage: effectiveResult.quote?.payment_preimage || effectiveResult.payment_preimage || "-",
+      amountPaid: quote.amount,
+      feeReserve: quote.fee_reserve,
+      changeReceived: changeAmount,
+      estimatedNewBalance: (balance ?? 0) - quote.amount - quote.fee_reserve + changeAmount,
+      fullMeltResult: meltResult,
+      changeProofsAdded: changeAmount > 0 ? changeArray : null
+    }));
+
+    setFormData(prev => ({ ...prev, meltInvoice: "" }));
+
+    // Comment out reload – state should update live now
+    // window.location.reload();
+
   } catch (err) {
     console.error("Melt error:", err);
     setDataOutput({
       error: "Melt failed",
-      details: err.message || String(err)
+      details: err.message || String(err),
+      stack: err.stack
     });
   }
 };
@@ -368,7 +432,6 @@ const handleMelt = async () => {
           {JSON.stringify(dataOutput, null, 2)}
         </pre>
       </div>
-      
     </main>
   );
 };

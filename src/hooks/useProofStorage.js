@@ -5,6 +5,7 @@ export default function useProofStorage() {
   const [activeMint, setActiveMint] = useState("");
   const [proofsByMint, setProofsByMint] = useState({});
   const [hydrated, setHydrated] = useState(false);
+  const [updateTrigger, setUpdateTrigger] = useState(0);
 
   // Load from localStorage once (client only)
   useEffect(() => {
@@ -58,6 +59,7 @@ export default function useProofStorage() {
       ...prev,
       [activeMint]: [...(prev[activeMint] || []), ...newProofs],
     }));
+    setUpdateTrigger(t => t + 1);
   }, [activeMint]);
 
   const removeProofs = useCallback((proofsToRemove) => {
@@ -67,6 +69,7 @@ export default function useProofStorage() {
         (p) => !proofsToRemove.some((r) => r.secret === p.secret)
       ),
     }));
+    setUpdateTrigger(t => t + 1);
   }, [activeMint]);
 
   const switchMint = useCallback((newUrl) => {
