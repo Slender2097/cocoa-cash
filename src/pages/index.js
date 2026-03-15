@@ -1,5 +1,5 @@
 import useProofStorage from "@/hooks/useProofStorage";
-import { Mint, Wallet, getEncodedToken } from "@cashu/cashu-ts";
+import { Mint, Wallet } from "@cashu/cashu-ts";
 import React, { useState, useEffect } from "react";
 
 const CocoaWallet = () => {
@@ -29,37 +29,9 @@ const {
   getProofsByAmountFromMint,       
   addProofsToMint,
   removeProofsFromMint,  
+  addProofs,          
+  removeProofs
 } = useProofStorage();
-
-
-/*
-THIS USEEFFECT
-useEffect(() => {
-  // Only run on client (after mount)
-  if (typeof window === 'undefined') return;
-
-  const storedActive = localStorage.getItem("activeMint");
-  if (!storedActive) return;
-
-  try {
-    const storedData = JSON.parse(localStorage.getItem(`mintData_${storedActive}`) || "{}");
-    if (!storedData.url) return;
-
-    const mint = new Mint(storedData.url);
-    const walletInstance = new Wallet(mint, { keys: storedData.keyset, unit: "sat" });
-
-    walletInstance.loadMint()
-      .then(() => {
-        setWallet(walletInstance);
-        setFormData(prev => ({ ...prev, mintUrl: storedActive }));
-        setWalletReady(true);
-      })
-      .catch(err => console.error("Failed to load stored mint:", err));
-      setWalletReady(false);
-  } catch (err) {
-    console.error("Error loading stored mint:", err);
-  }
-}, []);*/  // empty array = run once on mount
 
 useEffect(() => {
   if (typeof window === 'undefined') return;
@@ -108,58 +80,6 @@ useEffect(() => {
       [name]: value,
     }));
   };
-
-/*
-
-THIS HANDLESETMINT
-
-const handleSetMint = async () => {
-  const url = formData.mintUrl.trim();
-  if (!url) {
-    setDataOutput({ error: "Enter a mint URL" });
-    return;
-  }
-
-  try {
-    const mint = new Mint(url);
-    const info = await mint.getInfo();
-    setDataOutput(info);
-
-    const newWallet = new Wallet(mint);
-    await newWallet.loadMint();
-
-    setWallet(newWallet);
-    setWalletReady(true);
-
-    // Save to multi-mint map
-    setWallets(prev => ({
-      ...prev,
-      [url]: newWallet,
-    }));
-
-    const { keysets } = await mint.getKeys();
-    const satKeyset = keysets.find((k) => k.unit === "sat");
-
-    localStorage.setItem(
-      `mintData_${url}`,
-      JSON.stringify({ url, keyset: satKeyset })
-    );
-
-    // Call switchMint
-    switchMint(url);
-
-    // Update form (safe – setFormData is always stable)
-    setFormData(prev => ({ ...prev, mintUrl: url }));
-
-  } catch (error) {
-    console.error("Mint connection failed:", error);
-    setDataOutput({
-      error: "Failed to connect to mint",
-      details: error.message || String(error),
-    });
-    setWalletReady(false);
-  }
-};*/
 
 const handleSetMint = async () => {
   const url = formData.mintUrl.trim();
@@ -259,105 +179,6 @@ const handleSetMint = async () => {
   }
 };
 
-/*const handleMint = async () => {
-  const amount = parseInt(formData.mintAmount);
-  if (isNaN(amount) || amount <= 0) {
-    setDataOutput({ error: "Enter amount > 0" });
-    return;
-  }
-
-  const mintUrl = activeMint || formData.mintUrl.trim();
-  if (!mintUrl) {
-    setDataOutput({ error: "No mint URL" });
-    return;
-  }
-
-  console.log("[MINT] Starting for", amount, "sat → mint:", mintUrl);
-
-  let targetWallet = wallets[mintUrl];
-  if (!targetWallet) {
-    try {
-      const mint = new Mint(mintUrl);
-      targetWallet = new Wallet(mint);
-      await targetWallet.loadMint();
-      setWallets(prev => ({ ...prev, [mintUrl]: targetWallet }));
-      if (!wallet || activeMint === mintUrl) {
-        setWallet(targetWallet);
-        setWalletReady(true);
-      }
-    } catch (err) {
-      console.error("[MINT] Wallet init failed:", err);
-      setDataOutput({ error: "Wallet failed" });
-      return;
-    }
-  }
-
-  let quote;
-  try {
-    quote = await targetWallet.createMintQuoteBolt11(amount);
-    setDataOutput(quote);
-    console.log("[MINT] Quote:", quote.state, quote.quote);
-  } catch (err) {
-    console.error("[MINT] Quote failed:", err);
-    setDataOutput({ error: "Quote failed" });
-    return;
-  }
-
-  const checkQuote = async () => {
-    try {
-      const checked = await targetWallet.checkMintQuoteBolt11(quote.quote);
-      console.log("[MINT] State:", checked.state, "paid:", checked.paid);
-
-      if (checked.state === "PAID" || checked.state === "ISSUED") {
-        console.log("[MINT] Minting proofs...");
-
-        const proofs = await targetWallet.mintProofsBolt11(amount, quote.quote, {
-          keysetId: targetWallet.keys?.id,
-        });
-
-        console.log("[MINT] Proofs:", proofs?.length || 0);
-        if (proofs?.length) {
-          console.log("[MINT] Amounts:", proofs.map(p => p.amount));
-        }
-
-        if (proofs?.length > 0) {
-          console.log("[MINT] Adding to:", mintUrl);
-
-          //addProofsToMint(mintUrl, proofs);
-
-          // Force the entire component to re-render (this fixes the first-mint visibility delay)
-         // setRenderKey(k => k + 1);
-
-          //setFormData(prev => ({ ...prev, mintAmount: "" }));
-          //setDataOutput({ status: "Proofs added" });
-
-          addProofsToMint(mintUrl, proofs);
-          setRenderKey(k => k + 1); // keep if you still need force render
-
-          // Better immediate debug – no timeout
-          console.log("[MINT DEBUG IMMEDIATE]");
-          console.log("  activeMint:", activeMint);
-          console.log("  currentProofs length:", currentProofs.length);
-          console.log("  balance:", balance);
-          console.log("  proofsByMint keys:", Object.keys(proofsByMint || {}));
-          if (proofsByMint[mintUrl]) {
-            console.log("  proofs for this mint:", proofsByMint[mintUrl].map(p => p.amount));
-          }
-        }
-
-        setDataOutput({ minted: proofs });
-      } else {
-        setTimeout(checkQuote, 5000);
-      }
-    } catch (err) {
-      console.error("[MINT] Error:", err);
-      setDataOutput({ error: "Mint check failed" });
-    }
-  };
-
-  checkQuote();
-};*/
-
 const handleMint = async () => {
   const amount = parseInt(formData.mintAmount);
   if (isNaN(amount) || amount <= 0) {
@@ -450,146 +271,6 @@ const handleMint = async () => {
 
   checkQuote();
 };
-
-/*
-THIS HANDLEMELT
-
-const handleMelt = async () => {
-  if (!wallet) {
-    setDataOutput({ error: "No wallet connected" });
-    return;
-  }
-
-  const invoice = formData.meltInvoice?.trim();
-  if (!invoice) {
-    setDataOutput({ error: "Please enter a Bolt11 invoice" });
-    return;
-  }
-
-  try {
-    // Step 1: Create quote
-    const quote = await wallet.createMeltQuoteBolt11(invoice);
-    setDataOutput({
-      status: "Creating quote...",
-      meltQuote: quote
-    });
-
-    const totalAmountNeeded = quote.amount + quote.fee_reserve;
-
-    // ── DEBUG LOGS FOR PROOF SELECTION ──────────────────────────────────────────
-    console.log("Current wallet keyset ID:", wallet.keys?.id);
-    console.log("All stored proofs:", currentProofs.map(p => ({ 
-      amount: p.amount, 
-      id: p.id, 
-      secretPrefix: p.secret?.slice(0, 8) + "..." 
-    })));
-    console.log("Needed amount:", totalAmountNeeded);
-    // ─────────────────────────────────────────────────────────────────────────────
-
-    // Use ALL proofs that are small enough (ignore keyset filter for now)
-    const proofs = currentProofs.filter(p => p.amount <= totalAmountNeeded);
-
-    console.log("Selected proofs (all keysets):", proofs.map(p => p.amount));
-    console.log("Selected total:", proofs.reduce((sum, p) => sum + p.amount, 0));
-
-    if (proofs.length === 0 || proofs.reduce((sum, p) => sum + p.amount, 0) < totalAmountNeeded) {
-      setDataOutput({ 
-        error: "Insufficient balance", 
-        details: "No suitable proofs found. Total available: " + balance + " sat" 
-      });
-      alert("Insufficient balance");
-      return;
-    }
-
-    // Step 2: Melt
-    const meltResult = await wallet.meltProofsBolt11(quote, proofs, {
-      keysetId: wallet.keys?.id, // still pass current keyset for the melt request
-    });
-
-    console.log("Full meltResult from library:", JSON.stringify(meltResult, null, 2));
-
-    // ── Workaround for wrapped "error" on success ──
-    let effectiveResult = meltResult;
-    let isWrappedError = false;
-
-    if (meltResult.error && meltResult.details?.quote) {
-      console.warn("Mint/library wrapped success in 'error' → using inner details");
-      isWrappedError = true;
-      effectiveResult = meltResult.details;
-    }
-
-    const isPaid = effectiveResult.paid === true ||
-                   effectiveResult.quote?.paid === true;
-
-    if (!isPaid) {
-      setDataOutput({
-        error: "Mint could not pay the invoice (or paid status missing)",
-        details: meltResult,
-        meltResultRaw: JSON.stringify(meltResult, null, 2)
-      });
-      return;
-    }
-
-    // ── Success path ──
-    console.log("Melt SUCCESS - removing spent proofs:", proofs.map(p => p.amount));
-    hookRemoveProofs(proofs);
-
-    console.log("Proofs removed. Current count:", currentProofs.length);
-
-    let changeAmount = 0;
-    const changeArray = effectiveResult.change || [];
-
-    if (Array.isArray(changeArray) && changeArray.length > 0) {
-      const readyChangeProofs = changeArray.map(p => ({
-        secret: p.secret,
-        C: p.C,
-        amount: p.amount,
-        id: p.id,
-      }));
-
-      if (readyChangeProofs.length > 0) {
-        console.log("Adding change proofs:", readyChangeProofs.map(p => p.amount));
-        //hookAddProofs(readyChangeProofs);
-        addProofsToMint(activeMint, readyChangeProofs);
-        changeAmount = readyChangeProofs.reduce((sum, p) => sum + p.amount, 0);
-
-        console.log("Proofs added. New count:", currentProofs.length);
-        console.log("Calculated balance right now:", balance);
-      } else {
-        console.warn("Change proofs array was empty after mapping");
-      }
-    } else {
-      console.warn("No change proofs found in response");
-    }
-
-    // Final success output – merge with previous data
-    setDataOutput(prev => ({
-      ...prev,
-      status: "Success",
-      success: `Melt OK - invoice paid! ${isWrappedError ? '(wrapped error workaround applied)' : ''}`,
-      preimage: effectiveResult.quote?.payment_preimage || effectiveResult.payment_preimage || "-",
-      amountPaid: quote.amount,
-      feeReserve: quote.fee_reserve,
-      changeReceived: changeAmount,
-      estimatedNewBalance: (balance ?? 0) - quote.amount - quote.fee_reserve + changeAmount,
-      fullMeltResult: meltResult,
-      changeProofsAdded: changeAmount > 0 ? changeArray : null
-    }));
-
-    setFormData(prev => ({ ...prev, meltInvoice: "" }));
-
-    // Comment out reload – state should update live now
-    // window.location.reload();
-
-  } catch (err) {
-    console.error("Melt error:", err);
-    setDataOutput({
-      error: "Melt failed",
-      details: err.message || String(err),
-      stack: err.stack
-    });
-  }
-};*/
 
 const handleMelt = async () => {
   if (!wallet) {
@@ -690,7 +371,7 @@ const handleMelt = async () => {
         secret: p.secret,
         C: p.C,
         amount: p.amount,
-        id: p.id || wallet.keys?.id || wallet.keysets?.find(ks => ks.active)?.id, // fallback chain
+        id: p.id || wallet.keys?.id || wallet.keysets?.find(ks => ks.active)?.id, // fallback chain // ← ensure id is set
       }));
 
       if (readyChangeProofs.length > 0) {
@@ -734,81 +415,120 @@ const handleMelt = async () => {
 };
 
 const handleSwapSend = async () => {
-  const amount = parseInt(formData.swapAmount, 10);
-  if (isNaN(amount) || amount <= 0) {
-    return setDataOutput({ error: "Enter a valid amount" });
+  const requestedAmount = parseInt(formData.swapAmount, 10);
+  if (isNaN(requestedAmount) || requestedAmount <= 0) {
+    setDataOutput({ error: "Enter a valid amount > 0" });
+    return;
   }
 
-  if (!activeMint) {
-    return setDataOutput({ error: "No active mint selected" });
+  if (!wallet || !activeMint) {
+    setDataOutput({ error: "Wallet or mint not ready" });
+    return;
   }
 
-  // Recreate fresh wallet every time (long-term fix)
-  let currentWallet;
+  // 1. Select proofs locally
+  const selectedProofs = getProofsByAmount(requestedAmount);
+
+  if (selectedProofs.length === 0 ||
+      selectedProofs.reduce((sum, p) => sum + (p?.amount ?? 0), 0) < requestedAmount) {
+    setDataOutput({
+      error: "Insufficient balance",
+      details: `Need ${requestedAmount} sat, available: ${balance ?? 0} sat`
+    });
+    return;
+  }
+
+  console.log("[SWAP SEND] Preparing to send", selectedProofs.length, "proofs →",
+    selectedProofs.map(p => p?.amount ?? '?'), "sat total");
+
   try {
-    const mint = new Mint(activeMint);
-    currentWallet = new Wallet(mint);
-    await currentWallet.loadMint();
+    // 2. New v3+ API: build the send operation
+    const op = wallet.ops.send(requestedAmount, selectedProofs);
 
-    if (!currentWallet.keys?.id) {
-      throw new Error("Failed to load mint keys for swap");
+    // Optional customizations (uncomment as needed)
+    // op.keepAsRandom();                  // random change secrets
+    // op.includeFees(true);               // sender pays receiver fee
+    // op.offlineExactOnly();              // try offline exact match first
+
+    // Execute
+    const result = await op.run();
+
+    // result contains send + keep/returnChange/change
+    const sendProofs = result.send ?? [];
+    const keepProofs = result.keep ?? result.returnChange ?? result.change ?? [];
+
+    console.log("[SWAP RESULT]", {
+      sendCount: sendProofs.length,
+      keepCount: keepProofs.length
+    });
+
+    // 3. Defensive cleanup
+    const safeSend = sendProofs
+      .filter(p => p && typeof p === 'object' && p.secret?.length >= 64)
+      .map(p => ({
+        id: p.id ?? activeKeysetId ?? null,
+        amount: Number(p.amount ?? 0),
+        secret: (p.secret ?? '').trim(),
+        C: p.C ?? ""
+      }));
+
+    const safeKeep = keepProofs
+      .filter(p => p && typeof p === 'object' && p.secret?.length >= 64)
+      .map(p => ({
+        id: p.id ?? activeKeysetId ?? null,
+        amount: Number(p.amount ?? 0),
+        secret: (p.secret ?? '').trim(),
+        C: p.C ?? ""
+      }));
+
+    let finalSend = safeSend;
+    let finalKeep = safeKeep;
+
+    if (safeSend.length === 0 && safeKeep.length > 0) {
+      console.warn("[SWAP] Empty send — using keep as token to send");
+      finalSend = safeKeep;
+      finalKeep = [];
     }
 
-    console.log("[SWAP] Fresh wallet loaded with keyset ID:", currentWallet.keys.id);
+    if (finalSend.length === 0) {
+      throw new Error("No valid send proofs after cleanup");
+    }
+
+    // 4. Raw token object (no encoding needed)
+    const rawToken = {
+      token: [{
+        mint: activeMint,
+        proofs: finalSend
+      }]
+    };
+
+    console.log("[RAW TOKEN TO SEND]", JSON.stringify(rawToken, null, 2));
+
+    // 5. Update storage
+    removeProofs(selectedProofs);
+    if (finalKeep.length > 0) {
+      addProofs(finalKeep);
+    }
+
+    // 6. Success — show raw token
+    setDataOutput({
+      status: "Tokens ready to send (raw format)",
+      rawTokenToSend: rawToken,
+      sentAmount: finalSend.reduce((s, p) => s + (p?.amount ?? 0), 0),
+      sentCount: finalSend.length,
+      changeAmount: finalKeep.reduce((s, p) => s + (p?.amount ?? 0), 0),
+      changeCount: finalKeep.length,
+      message: "Copy the rawTokenToSend JSON and send it. Receiver uses wallet.receive(rawToken)"
+    });
+
+    setFormData(prev => ({ ...prev, swapAmount: "" }));
+
   } catch (err) {
-    console.error("[SWAP] Wallet recreation failed:", err);
-    return setDataOutput({
-      error: "Wallet initialization failed",
-      details: "Click 'Set Mint' again",
-    });
-  }
-
-  console.log("=== SWAP START ===");
-  console.log("Requested amount:", amount);
-  console.log("Available proofs:", currentProofs.map(p => ({ amount: p.amount, id: p.id || "missing" })));
-
-  // Permissive selection — allow overspend + change (same logic as melt)
-  const proofs = currentProofs.filter(p => p.id === currentWallet.keys.id);
-
-  // Greedy: largest first (optional but recommended)
-  proofs.sort((a, b) => b.amount - a.amount);
-
-  console.log("Selected proofs:", proofs.map(p => p.amount));
-  console.log("Total selected:", proofs.reduce((sum, p) => sum + p.amount, 0));
-
-  if (proofs.length === 0 || proofs.reduce((sum, p) => sum + p.amount, 0) < amount) {
-    return setDataOutput({
-      error: "Insufficient balance",
-      details: `Need ${amount} sat, have ${balance} sat`,
-    });
-  }
-
-  try {
-    console.log("[SWAP] Calling wallet.send...");
-    const result = await currentWallet.send(amount, proofs);
-    const { keep, send } = result;
-
-    console.log("[SWAP] Change returned:", keep.map(p => p.amount));
-    console.log("[SWAP] Spent proofs:", send.map(p => p.amount));
-    console.log("[SWAP] Total change value:", keep.reduce((sum, p) => sum + p.amount, 0));
-
-    const encodedToken = getEncodedToken({
-      token: [{ mint: activeMint, proofs: send }],
-    });
-
-    console.log("[SWAP] Token generated");
-
-    // Update storage
-    removeProofsFromMint(activeMint, proofs);  // remove spent
-    addProofsToMint(activeMint, keep);         // add change back
-
-    setDataOutput(encodedToken);
-  } catch (err) {
-    console.error("[SWAP] Error:", err);
+    console.error("[SWAP ERROR FULL]", err);
     setDataOutput({
       error: "Swap failed",
       message: err.message || String(err),
-      hint: "Check console for details",
+      hint: "Check console — library or mint issue"
     });
   }
 };
@@ -838,110 +558,121 @@ const handleSwapClaim = async () => {
 };
 
   return (
-    <main >
-      <div className="cashu-operations-container">
-        <div className="section">
-          <label htmlFor="mint-url">Mint URL:</label>
-          <input
-            type="text"
-            name="mintUrl"
-            className="mint-url"
-            value={formData.mintUrl}
-            onChange={handleChange}
-          />
-          <button className="mint-connect-button" onClick={handleSetMint}>
-            Set Mint
-          </button>
-        </div>
+  <main>
+    <div className="cashu-operations-container">
 
-        <div className="section">
-          <h2>Minting Tokens</h2>
-          <label htmlFor="mint-amount">Amount:</label>
-          <input
-            id="mintAmountInput"
-            type="number"
-            name="mintAmount"
-            className="mint-amount"
-            value={formData.mintAmount}
-            onChange={handleChange}
-          />
-          <button className="mint-button" onClick={handleMint}>
-            Mint
-          </button>
-        </div>
-
-        <div className="section">
-          <h2>Melt Tokens</h2>
-          <label htmlFor="melt-invoice">Bolt11 Invoice:</label>
-          <input
-            id="meltInvoiceInput"
-            type="text"
-            name="meltInvoice"
-            className="melt-invoice"
-            value={formData.meltInvoice}
-            onChange={handleChange}
-          />
-          <button className="melt-button" onClick={handleMelt}>
-            Melt
-          </button>
-        </div>
-
-        <div className="section">
-          <h2>Swap Tokens</h2>
-          <label htmlFor="swap-amount">Amount:</label>
-          <input
-            id="swapAmountInput"
-            type="number"
-            name="swapAmount"
-            className="swap-amount"
-            value={formData.swapAmount}
-            onChange={handleChange}
-          />
-
-          <button 
-            className="swap-send-button" 
-            onClick={handleSwapSend}
-            disabled={!walletReady}
-          >
-            {walletReady ? "Swap to Send" : "Wallet Loading..."}
-          </button>
-
-
-          <label htmlFor="swap-token">Token:</label>
-          <input
-            id="swapTokenInput"
-            type="text"
-            name="swapToken"
-            className="swap-token"
-            value={formData.swapToken}
-            onChange={handleChange}
-          />
-          <button className="swap-claim-button" onClick={handleSwapClaim}>
-            Swap to Claim
-          </button>
-        </div>
+      {/* Mint URL section */}
+      <div className="section">
+        <label htmlFor="mintUrlInput">Mint URL:</label>
+        <input
+          id="mintUrlInput"                     // ← added missing id
+          type="text"
+          name="mintUrl"
+          className="mint-url"
+          value={formData.mintUrl}
+          onChange={handleChange}
+        />
+        <button className="mint-connect-button" onClick={handleSetMint}>
+          Set Mint
+        </button>
       </div>
 
-      <div className="data-display-container">
-        {hydrated ? (
-          <>
-        <h2>
-          Balance: {balance} sat 
-          {activeMint && proofsByMint[activeMint] && (
-            <small> ({proofsByMint[activeMint].reduce((sum, p) => sum + p.amount, 0)} from this mint)</small>
-          )}
-        </h2>
-        <p>Current mint: {activeMint || "None"}</p>
-          </>
-        ) : (
-          <h2>Balance: … sat</h2>
-        )}
-        <pre id="data-output" className="data-output">
-          {JSON.stringify(dataOutput, null, 2)}
-        </pre>
+      {/* Minting Tokens */}
+      <div className="section">
+        <h2>Minting Tokens</h2>
+        <label htmlFor="mintAmountInput">Amount:</label>
+        <input
+          id="mintAmountInput"
+          type="number"
+          name="mintAmount"
+          className="mint-amount"
+          value={formData.mintAmount}
+          onChange={handleChange}
+        />
+        <button className="mint-button" onClick={handleMint}>
+          Mint
+        </button>
       </div>
-    </main>
-  );
+
+      {/* Melt Tokens */}
+      <div className="section">
+        <h2>Melt Tokens</h2>
+        <label htmlFor="meltInvoiceInput">Bolt11 Invoice:</label>
+        <input
+          id="meltInvoiceInput"
+          type="text"
+          name="meltInvoice"
+          className="melt-invoice"
+          value={formData.meltInvoice}
+          onChange={handleChange}
+        />
+        <button className="melt-button" onClick={handleMelt}>
+          Melt
+        </button>
+      </div>
+
+      {/* Swap Tokens */}
+      <div className="section">
+        <h2>Swap Tokens</h2>
+
+        <label htmlFor="swapAmountInput">Amount:</label>
+        <input
+          id="swapAmountInput"
+          type="number"
+          name="swapAmount"
+          className="swap-amount"
+          value={formData.swapAmount}
+          onChange={handleChange}
+        />
+
+        <button
+          className="swap-send-button"
+          onClick={handleSwapSend}
+          disabled={!walletReady}
+        >
+          {walletReady ? "Swap to Send" : "Wallet Loading..."}
+        </button>
+
+        <label htmlFor="swapTokenInput">Token:</label>
+        <input
+          id="swapTokenInput"
+          type="text"
+          name="swapToken"
+          className="swap-token"
+          value={formData.swapToken}
+          onChange={handleChange}
+        />
+        <button className="swap-claim-button" onClick={handleSwapClaim}>
+          Swap to Claim
+        </button>
+      </div>
+
+    </div>
+
+    <div className="data-display-container">
+      {hydrated ? (
+        <>
+          <h2>
+            Balance: {balance} sat
+            {activeMint && proofsByMint[activeMint] && (
+              <small>
+                {' '}
+                ({proofsByMint[activeMint].reduce((sum, p) => sum + p.amount, 0)} from this mint)
+              </small>
+            )}
+          </h2>
+          <p>Current mint: {activeMint || "None"}</p>
+        </>
+      ) : (
+        <h2>Balance: … sat</h2>
+      )}
+
+      <pre id="data-output" className="data-output">
+        {JSON.stringify(dataOutput, null, 2)}
+      </pre>
+    </div>
+  </main>
+);
 };
 
 export default CocoaWallet;

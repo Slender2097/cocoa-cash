@@ -1,4 +1,3 @@
-// src/hooks/useProofStorage.js
 import { useState, useEffect, useMemo, useCallback } from "react";
 
 export default function useProofStorage() {
@@ -6,9 +5,19 @@ export default function useProofStorage() {
   const [proofsByMint, setProofsByMint] = useState({}); // { [mintUrl: string]: Proof[] }
   const [hydrated, setHydrated] = useState(false);
 
-  /*const [forceUpdate, setForceUpdate] = useState(0);*/
+  // Utility to validate & clean a proof
+  const cleanProof = (p) => {
+    if (!p || typeof p !== "object" || !p.secret || typeof p.secret !== "string" || p.secret.length < 64) {
+      return null; // invalid
+    }
+    return {
+      ...p,
+      id: p.id || "missing-id-recovered", // fallback if missing
+      amount: Number(p.amount) || 0,
+    };
+  };
 
-  // Load from localStorage (client-side only)
+  // Load from localStorage & clean
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -19,19 +28,23 @@ export default function useProofStorage() {
       const stored = localStorage.getItem("proofsByMint");
       if (stored) {
         const parsed = JSON.parse(stored);
-        // Basic validation
         if (typeof parsed === "object" && parsed !== null) {
-          Object.values(parsed).forEach(proofs => {
-            if (!Array.isArray(proofs)) {
-              throw new Error("Invalid proofs format in storage");
+          const cleaned = {};
+          Object.entries(parsed).forEach(([mintUrl, proofs]) => {
+            if (Array.isArray(proofs)) {
+              const validProofs = proofs.map(cleanProof).filter(Boolean); // clean & remove invalid
+              if (validProofs.length < proofs.length) {
+                console.warn(`[HOOK LOAD] Cleaned ${proofs.length - validProofs.length} invalid proofs from ${mintUrl}`);
+              }
+              cleaned[mintUrl] = validProofs;
             }
           });
-          setProofsByMint(parsed);
+          setProofsByMint(cleaned);
         }
       }
     } catch (err) {
       console.error("Failed to load proof storage:", err);
-      // Optional: reset corrupted storage
+      // Reset corrupted storage (optional – uncomment if needed)
       // localStorage.removeItem("proofsByMint");
     } finally {
       setHydrated(true);
@@ -50,12 +63,6 @@ export default function useProofStorage() {
     localStorage.setItem("proofsByMint", JSON.stringify(proofsByMint));
   }, [proofsByMint]);
 
-  // Trigger when proofs change
-    /*useEffect(() => {
-      setForceUpdate(t => t + 1);
-    }, [proofsByMint]);*/
-
-
   // ── Current mint data ──────────────────────────────────────────────
   const currentProofs = useMemo(
     () => proofsByMint[activeMint] || [],
@@ -68,38 +75,38 @@ export default function useProofStorage() {
   );
 
   const getProofsByAmount = useCallback((targetAmount) => {
-  if (!targetAmount || targetAmount <= 0) return [];
+    if (!targetAmount || targetAmount <= 0) return [];
 
-  const candidates = currentProofs;
+    const candidates = currentProofs;
 
-  const sorted = [...candidates].sort((a, b) => b.amount - a.amount);
+    const sorted = [...candidates].sort((a, b) => b.amount - a.amount);
 
-  let sum = 0;
-  const selected = [];
+    let sum = 0;
+    const selected = [];
 
-  for (const proof of sorted) {
-    if (sum >= targetAmount) break;
+    for (const proof of sorted) {
+      if (sum >= targetAmount) break;
 
-    // Allow larger overshoot if needed — especially for single large proof
-    if (sum + proof.amount <= targetAmount * 3 || selected.length === 0) {
-      selected.push(proof);
-      sum += proof.amount;
+      // Allow larger overshoot if needed — especially for single large proof
+      if (sum + proof.amount <= targetAmount * 3 || selected.length === 0) {
+        selected.push(proof);
+        sum += proof.amount;
+      }
     }
-  }
 
-  console.log(
-    "[HOOK] getProofsByAmount selected:",
-    selected.length,
-    "proofs for",
-    targetAmount,
-    "sat → amounts:",
-    selected.map(p => p.amount),
-    "→ total:",
-    sum
-  );
+    console.log(
+      "[HOOK] getProofsByAmount selected:",
+      selected.length,
+      "proofs for",
+      targetAmount,
+      "sat → amounts:",
+      selected.map(p => p.amount),
+      "→ total:",
+      sum
+    );
 
-  return selected;
-}, [currentProofs]);
+    return selected;
+  }, [currentProofs]);
 
   // ── Get proofs from ANY mint ───────────────────────────────────────
   const getProofsByAmountFromMint = useCallback(
@@ -124,25 +131,27 @@ export default function useProofStorage() {
     [proofsByMint]
   );
 
-  // ── Add proofs to specific mint ────────────────────────────────────
-const addProofsToMint = useCallback((mintUrl, newProofs) => {
-  if (!mintUrl || !Array.isArray(newProofs) || newProofs.length === 0) return;
+  const addProofsToMint = useCallback((mintUrl, newProofs) => {
+    if (!mintUrl || !Array.isArray(newProofs) || newProofs.length === 0) return;
 
-  setProofsByMint(prev => {
-    const existing = prev[mintUrl] || [];
-    const existingSecrets = new Set(existing.map(p => p.secret));
-    const uniqueNew = newProofs.filter(p => p?.secret && !existingSecrets.has(p.secret));
+    setProofsByMint(prev => {
+      const existing = prev[mintUrl] || [];
+      const existingSecrets = new Set(existing.map(p => p.secret));
+      const uniqueNew = newProofs
+        .map(cleanProof)  // clean incoming
+        .filter(Boolean)  // remove invalid
+        .filter(p => !existingSecrets.has(p.secret));  // unique
 
-    if (uniqueNew.length === 0) return prev;
+      if (uniqueNew.length === 0) return prev;
 
-    const newList = [...existing, ...uniqueNew];
+      const newList = [...existing, ...uniqueNew];
 
-    console.log("[HOOK ADD] Added to", mintUrl, ":", uniqueNew.length, "new → total:", newList.length);
+      console.log("[HOOK ADD] Added to", mintUrl, ":", uniqueNew.length, "new → total:", newList.length);
+      console.log("[HOOK ADD] Proof IDs after add:", newList.map(p => p.id));
 
-    // Force completely new object reference
-    return { ...prev, [mintUrl]: newList };
-  });
-}, []);
+      return { ...prev, [mintUrl]: newList };
+    });
+  }, []);
 
   // ── Remove proofs from specific mint ───────────────────────────────
   const removeProofsFromMint = useCallback((mintUrl, proofsToRemove) => {
@@ -150,23 +159,31 @@ const addProofsToMint = useCallback((mintUrl, newProofs) => {
 
     const secretsToRemove = new Set(proofsToRemove.map((p) => p.secret).filter(Boolean));
 
-    setProofsByMint((prev) => ({
-      ...prev,
-      [mintUrl]: (prev[mintUrl] || []).filter((p) => !secretsToRemove.has(p.secret)),
-    }));
+    setProofsByMint((prev) => {
+      const mintProofs = (prev[mintUrl] || []).filter(p => p && typeof p === 'object' && p.secret);  // defensive clean
+      const newList = mintProofs.filter((p) => !secretsToRemove.has(p.secret));
+
+      if (newList.length === mintProofs.length) {
+        console.warn("[HOOK REMOVE] No proofs matched for removal in", mintUrl);
+      } else {
+        console.log("[HOOK REMOVE] Removed", mintProofs.length - newList.length, "proofs from", mintUrl);
+      }
+
+      return { ...prev, [mintUrl]: newList };
+    });
   }, []);
 
   // ── Add to current active mint (backward compatible) ───────────────
- const addProofs = useCallback(
-  (newProofs) => {
-    if (!activeMint) {
-      console.warn("[HOOK] addProofs called but activeMint is empty!");
-      return;
-    }
-    addProofsToMint(activeMint, newProofs);
-  },
-  [activeMint, addProofsToMint]
-);
+  const addProofs = useCallback(
+    (newProofs) => {
+      if (!activeMint) {
+        console.warn("[HOOK] addProofs called but activeMint is empty!");
+        return;
+      }
+      addProofsToMint(activeMint, newProofs);
+    },
+    [activeMint, addProofsToMint]
+  );
 
   // ── Remove from current active mint (backward compatible) ──────────
   const removeProofs = useCallback(
@@ -179,6 +196,16 @@ const addProofsToMint = useCallback((mintUrl, newProofs) => {
     if (newUrl && typeof newUrl === "string") {
       setActiveMint(newUrl.trim());
     }
+  }, []);
+
+  // Optional: reset a mint's proofs if corrupted
+  const resetMint = useCallback((mintUrl) => {
+    setProofsByMint(prev => {
+      const newState = { ...prev };
+      delete newState[mintUrl];
+      return newState;
+    });
+    console.log("[HOOK] Reset proofs for", mintUrl);
   }, []);
 
   return {
@@ -199,5 +226,6 @@ const addProofsToMint = useCallback((mintUrl, newProofs) => {
     getProofsByAmountFromMint,
     addProofsToMint,
     removeProofsFromMint,
+    resetMint,  // new: call this if crashes persist, e.g., resetMint(activeMint)
   };
 }
