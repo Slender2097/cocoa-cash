@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 
 export default function useProofStorage() {
   const [activeMint, setActiveMint] = useState("");
-  const [proofsByMint, setProofsByMint] = useState({}); // { [mintUrl: string]: Proof[] }
+  const [proofsByMint, setProofsByMint] = useState({}); 
   const [hydrated, setHydrated] = useState(false);
 
   // Utility to validate & clean a proof
