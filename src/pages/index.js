@@ -1,5 +1,5 @@
 import useProofStorage from "@/hooks/useProofStorage";
-import { Mint, Wallet, getEncodedTokenV4} from "@cashu/cashu-ts";
+import { Mint, Wallet, getEncodedTokenV4, getDecodedToken} from "@cashu/cashu-ts";
 import React, { useState, useEffect } from "react";
 
 const CocoaWallet = () => {
@@ -24,10 +24,8 @@ const {
   switchMint,   
   hydrated,
   currentProofs, 
-  proofsByMint,                    
-  //getProofsByAmountFromMint,       
+  proofsByMint,                         
   addProofsToMint,
-  //removeProofsFromMint,  
   addProofs,          
   removeProofs
 } = useProofStorage();
@@ -532,7 +530,9 @@ const handleSwapSend = async () => {
       hint: "Check console — library or mint issue"
     });
   }
-};*/
+};
+
+Normal One
 
 const handleSwapSend = async () => {
   const requestedAmount = parseInt(formData.swapAmount, 10);
@@ -630,10 +630,128 @@ const handleSwapSend = async () => {
       hint: "Check console — possible library or mint issue"
     });
   }
+};*/
+
+const handleSwapSend = async () => {
+  const requestedAmount = parseInt(formData.swapAmount, 10);
+  if (isNaN(requestedAmount) || requestedAmount <= 0) {
+    setDataOutput({ error: "Enter a valid amount > 0" });
+    return;
+  }
+
+  if (!wallet || !activeMint) {
+    setDataOutput({ error: "Wallet or mint not ready" });
+    return;
+  }
+
+  // 1. Select proofs locally
+  const selectedProofs = getProofsByAmount(requestedAmount);
+
+  if (selectedProofs.length === 0 ||
+      selectedProofs.reduce((sum, p) => sum + (p?.amount ?? 0), 0) < requestedAmount) {
+    setDataOutput({
+      error: "Insufficient balance",
+      details: `Need ${requestedAmount} sat, available: ${balance ?? 0} sat`
+    });
+    return;
+  }
+
+  console.log("[SWAP SEND] Preparing to send", selectedProofs.length, "proofs →",
+    selectedProofs.map(p => p?.amount ?? '?'), "sat total");
+
+  try {
+    // 2. Modern v3+ API: build and run send operation
+    const op = wallet.ops.send(requestedAmount, selectedProofs);
+
+    // Optional customizations (uncomment as needed)
+    // op.keepAsRandom();                  // random change secrets
+    // op.includeFees(true);               // sender pays receiver fee
+    // op.offlineExactOnly();              // try offline exact match first
+
+    // Execute the swap
+    const result = await op.run();
+
+    // result contains send + keep/returnChange/change
+    const sendProofs = result.send ?? [];
+    const keepProofs = result.keep ?? result.returnChange ?? result.change ?? [];
+
+    console.log("[SWAP RESULT]", {
+      sendCount: sendProofs.length,
+      keepCount: keepProofs.length
+    });
+
+    // 3. Defensive cleanup
+    const safeSend = sendProofs
+      .filter(p => p && typeof p === 'object' && p.secret?.length >= 64)
+      .map(p => ({
+        id: p.id ?? activeKeysetId ?? null,
+        amount: Number(p.amount ?? 0),
+        secret: (p.secret ?? '').trim(),
+        C: p.C ?? ""
+      }));
+
+    const safeKeep = keepProofs
+      .filter(p => p && typeof p === 'object' && p.secret?.length >= 64)
+      .map(p => ({
+        id: p.id ?? activeKeysetId ?? null,
+        amount: Number(p.amount ?? 0),
+        secret: (p.secret ?? '').trim(),
+        C: p.C ?? ""
+      }));
+
+    let finalSend = safeSend;
+    let finalKeep = safeKeep;
+
+    if (safeSend.length === 0 && safeKeep.length > 0) {
+      console.warn("[SWAP] Empty send — using keep as token to send");
+      finalSend = safeKeep;
+      finalKeep = [];
+    }
+
+    if (finalSend.length === 0) {
+      throw new Error("No valid send proofs after cleanup");
+    }
+
+    // 4. Create real v4 token string
+    const tokenData = {
+      mint: activeMint,
+      proofs: finalSend
+    };
+
+    const tokenString = getEncodedTokenV4(tokenData);
+
+    console.log("[REAL V4 TOKEN STRING]", tokenString);
+
+    // 5. Update storage
+    removeProofs(selectedProofs);
+    if (finalKeep.length > 0) {
+      addProofs(finalKeep);
+    }
+
+    // 6. Success — show token string
+    setDataOutput({
+      status: "Token created successfully",
+      classicTokenString: tokenString,
+      sentAmount: finalSend.reduce((s, p) => s + (p?.amount ?? 0), 0),
+      sentCount: finalSend.length,
+      changeAmount: finalKeep.reduce((s, p) => s + (p?.amount ?? 0), 0),
+      changeCount: finalKeep.length,
+      message: "Copy the token string below (starts with cashuA...) and paste it into Cashu.me, Nutstash, Alby or any wallet to receive it."
+    });
+
+    setFormData(prev => ({ ...prev, swapAmount: "" }));
+
+  } catch (err) {
+    console.error("[SWAP ERROR FULL]", err);
+    setDataOutput({
+      error: "Swap failed",
+      message: err.message || String(err),
+      hint: "Check console — library or mint issue"
+    });
+  }
 };
 
 const handleSwapClaim = async () => {
-  // Relaxed guard
   if (!wallet || (!wallet.keys?.id && (!wallet.keysets || wallet.keysets.length === 0))) {
     return setDataOutput({ 
       error: "Wallet not ready", 
@@ -641,18 +759,80 @@ const handleSwapClaim = async () => {
     });
   }
 
-  const token = formData.swapToken.trim();
-  if (!token) return setDataOutput({ error: "Enter a token" });
+  const tokenString = formData.swapToken.trim();
+  if (!tokenString) return setDataOutput({ error: "Enter a token" });
 
   try {
-    const { token: newToken } = await wallet.receive(token);
-    const proofs = newToken.token[0].proofs;
+    console.log("[CLAIM] Starting claim with token:", tokenString.substring(0, 50) + "...");
 
-    addProofsToMint(activeMint, proofs);
-    setDataOutput({ status: "Claimed", count: proofs.length });
+    // Decode to validate
+    const decoded = getDecodedToken(tokenString);
+    console.log("[CLAIM] Decoded token:", {
+      mint: decoded.mint,
+      unit: decoded.unit || "unknown",
+      proofsCount: decoded.proofs?.length || 0,
+      totalAmount: decoded.proofs?.reduce((s, p) => s + (p.amount || 0), 0) || 0
+    });
+
+    // Optional: force outputs for small amounts (helps with mint policy)
+    const totalAmount = decoded.proofs?.reduce((s, p) => s + (p.amount || 0), 0) || 0;
+    const outputs = totalAmount > 0 ? [{ amount: totalAmount }] : []; // simple: request same amount back
+
+    console.log("[CLAIM] Receiving with outputs:", outputs);
+
+    // Receive with explicit outputs (fixes "no outputs provided")
+    const receiveResult = await wallet.receive(tokenString, { outputs });
+
+    console.log("[CLAIM] Full receive result:", JSON.stringify(receiveResult, null, 2));
+
+    const receivedProofs = receiveResult.proofs ?? receiveResult.token?.proofs ?? [];
+
+    if (receivedProofs.length === 0) {
+      console.warn("[CLAIM] Mint returned no proofs — token may be spent or mint issue");
+      throw new Error("No proofs received from mint (token may be already redeemed or mint policy error)");
+    }
+
+    console.log("[CLAIM] Received proofs:", receivedProofs.length, "amounts:", 
+      receivedProofs.map(p => p.amount || "?"));
+
+    addProofsToMint(activeMint, receivedProofs);
+
+    const receivedAmount = receivedProofs.reduce((sum, p) => sum + (p.amount || 0), 0);
+
+    setDataOutput({
+      status: "Claim successful",
+      receivedCount: receivedProofs.length,
+      receivedAmount: receivedAmount,
+      message: `Claimed ${receivedProofs.length} proofs (${receivedAmount} sat). Added to your wallet.`
+    });
+
+    setFormData(prev => ({ ...prev, swapToken: "" }));
+
   } catch (error) {
     console.error("[SWAP CLAIM] Error:", error);
-    setDataOutput({ error: "Claim failed", details: error.message });
+
+    let userMessage = "Claim failed";
+    let details = error.message || String(error);
+
+    if (error.message.includes("no outputs provided") || error.message.includes("outputs")) {
+      userMessage = "Mint rejected claim (no outputs)";
+      details = "The mint could not provide new proofs. Try a different amount or mint.";
+    } else if (error.message.includes("no proofs") || error.message.includes("spent")) {
+      userMessage = "Token already redeemed or spent";
+      details = "This token was likely claimed before. Send a **new** token and claim it immediately.";
+    } else if (error.message.includes("witness") || error.message.includes("p2pk")) {
+      userMessage = "P2PK token requires private key";
+      details = "This token is P2PK-locked. You need the private key to claim it.";
+    } else if (error.message.includes("invalid") || error.message.includes("decode")) {
+      userMessage = "Invalid token format";
+      details = "The pasted string is not a valid Cashu token. Make sure it's complete and starts with cashuA...";
+    }
+
+    setDataOutput({
+      error: userMessage,
+      message: details,
+      hint: "Send a new token and claim it right away. Try pasting into Cashu.me to test."
+    });
   }
 };
 
