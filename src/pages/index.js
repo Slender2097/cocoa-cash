@@ -14,6 +14,7 @@ const CocoaWallet = () => {
   const [wallet, setWallet] = useState(null);
   const [wallets, setWallets] = useState({});
   const [walletReady, setWalletReady] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
 const {
   addProofs: hookAddProofs,
@@ -752,49 +753,65 @@ const handleSwapSend = async () => {
 };
 
 const handleSwapClaim = async () => {
-  if (!wallet || (!wallet.keys?.id && (!wallet.keysets || wallet.keysets.length === 0))) {
-    return setDataOutput({ 
-      error: "Wallet not ready", 
-      details: "Mint keys/keysets missing — click 'Set Mint' again"
-    });
-  }
+  // Prevent double-click / double-execution
+  if (isProcessing || !wallet) return;
+  setIsProcessing(true);
 
   const tokenString = formData.swapToken.trim();
-  if (!tokenString) return setDataOutput({ error: "Enter a token" });
+  if (!tokenString) {
+    setIsProcessing(false);
+    return setDataOutput({ error: "Enter a token string" });
+  }
 
   try {
-    console.log("[CLAIM] Starting claim with token:", tokenString.substring(0, 50) + "...");
+    console.log("[CLAIM] Starting claim with token:", tokenString.substring(0, 60) + "...");
 
-    // Decode to validate
+    // 1. Decode token — V4 safe
     const decoded = getDecodedToken(tokenString);
-    console.log("[CLAIM] Decoded token:", {
-      mint: decoded.mint,
-      unit: decoded.unit || "unknown",
-      proofsCount: decoded.proofs?.length || 0,
-      totalAmount: decoded.proofs?.reduce((s, p) => s + (p.amount || 0), 0) || 0
+    const tokenEntry = decoded.token?.[0] || decoded; // Handle V3 and V4
+
+    console.log("[CLAIM] Decoded:", {
+      mint: tokenEntry.mint,
+      unit: tokenEntry.unit || "unknown",
+      proofsCount: tokenEntry.proofs?.length || 0,
+      totalAmount: tokenEntry.proofs?.reduce((s, p) => s + (p.amount || 0), 0) || 0
     });
 
-    // Optional: force outputs for small amounts (helps with mint policy)
-    const totalAmount = decoded.proofs?.reduce((s, p) => s + (p.amount || 0), 0) || 0;
-    const outputs = totalAmount > 0 ? [{ amount: totalAmount }] : []; // simple: request same amount back
+    // 2. Mint URL check — prevent cross-mint claim failures
+    const tokenMintUrl = tokenEntry.mint;
+    if (tokenMintUrl && tokenMintUrl !== activeMint) {
+      throw new Error(`Mint mismatch: This token is for ${tokenMintUrl}. Switch to that mint first.`);
+    }
 
-    console.log("[CLAIM] Receiving with outputs:", outputs);
+    // 3. Receive — let library handle split (no manual outputs)
+    console.log("[CLAIM] Receiving (library decides outputs)...");
+    const receiveResult = await wallet.receive(tokenString);
 
-    // Receive with explicit outputs (fixes "no outputs provided")
-    const receiveResult = await wallet.receive(tokenString, { outputs });
+    console.log("[CLAIM] Full receive result (raw):", receiveResult);
+    console.log("[CLAIM] Result type:", typeof receiveResult, Array.isArray(receiveResult) ? "array" : "object");
 
-    console.log("[CLAIM] Full receive result:", JSON.stringify(receiveResult, null, 2));
+    // 4. Robust extraction
+    let receivedProofs = [];
 
-    const receivedProofs = receiveResult.proofs ?? receiveResult.token?.proofs ?? [];
+    if (Array.isArray(receiveResult)) {
+      receivedProofs = receiveResult;
+    } else if (receiveResult && typeof receiveResult === 'object') {
+      receivedProofs = receiveResult.proofs ||
+                       receiveResult.token?.proofs ||
+                       receiveResult.received ||
+                       receiveResult.change ||
+                       [];
+    }
 
     if (receivedProofs.length === 0) {
-      console.warn("[CLAIM] Mint returned no proofs — token may be spent or mint issue");
-      throw new Error("No proofs received from mint (token may be already redeemed or mint policy error)");
+      console.warn("[CLAIM] Mint returned empty proofs array");
+      throw new Error("No proofs received from mint (token may be spent, expired, or mint policy issue)");
     }
 
     console.log("[CLAIM] Received proofs:", receivedProofs.length, "amounts:", 
       receivedProofs.map(p => p.amount || "?"));
 
+    // 5. Store
     addProofsToMint(activeMint, receivedProofs);
 
     const receivedAmount = receivedProofs.reduce((sum, p) => sum + (p.amount || 0), 0);
@@ -814,15 +831,15 @@ const handleSwapClaim = async () => {
     let userMessage = "Claim failed";
     let details = error.message || String(error);
 
-    if (error.message.includes("no outputs provided") || error.message.includes("outputs")) {
-      userMessage = "Mint rejected claim (no outputs)";
-      details = "The mint could not provide new proofs. Try a different amount or mint.";
-    } else if (error.message.includes("no proofs") || error.message.includes("spent")) {
-      userMessage = "Token already redeemed or spent";
-      details = "This token was likely claimed before. Send a **new** token and claim it immediately.";
+    if (error.message.includes("Mint mismatch")) {
+      userMessage = "Wrong mint";
+      details = error.message + " Switch to the correct mint using 'Set Mint' and try again.";
+    } else if (error.message.includes("no proofs") || error.message.includes("empty")) {
+      userMessage = "No proofs from mint";
+      details = "Mint did not issue new proofs. Token may be spent, or mint doesn't support this amount/split. Try a fresh token or different mint.";
     } else if (error.message.includes("witness") || error.message.includes("p2pk")) {
       userMessage = "P2PK token requires private key";
-      details = "This token is P2PK-locked. You need the private key to claim it.";
+      details = "This token is locked with P2PK. You need the private key to claim it.";
     } else if (error.message.includes("invalid") || error.message.includes("decode")) {
       userMessage = "Invalid token format";
       details = "The pasted string is not a valid Cashu token. Make sure it's complete and starts with cashuA...";
@@ -831,8 +848,10 @@ const handleSwapClaim = async () => {
     setDataOutput({
       error: userMessage,
       message: details,
-      hint: "Send a new token and claim it right away. Try pasting into Cashu.me to test."
+      hint: "Send a new token and claim it right away. Paste into Cashu.me to test."
     });
+  } finally {
+    setIsProcessing(false);
   }
 };
 
