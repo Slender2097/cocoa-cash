@@ -17,7 +17,7 @@ const CocoaWallet = () => {
   const [isProcessing, setIsProcessing] = useState(false);
 
 const {
-  addProofs: hookAddProofs,
+  addProofs,
   balance,
   removeProofs: hookRemoveProofs,
   getProofsByAmount,
@@ -26,8 +26,7 @@ const {
   hydrated,
   currentProofs, 
   proofsByMint,                         
-  addProofsToMint,
-  addProofs,          
+  addProofsToMint,      
   removeProofs
 } = useProofStorage();
 
@@ -529,106 +528,6 @@ const handleSwapSend = async () => {
       error: "Swap failed",
       message: err.message || String(err),
       hint: "Check console — library or mint issue"
-    });
-  }
-};
-
-Normal One
-
-const handleSwapSend = async () => {
-  const requestedAmount = parseInt(formData.swapAmount, 10);
-  if (isNaN(requestedAmount) || requestedAmount <= 0) {
-    setDataOutput({ error: "Enter a valid amount > 0" });
-    return;
-  }
-
-  if (!wallet || !activeMint) {
-    setDataOutput({ error: "Wallet or mint not ready" });
-    return;
-  }
-
-  // 1. Select proofs locally
-  const selectedProofs = getProofsByAmount(requestedAmount);
-
-  if (selectedProofs.length === 0 ||
-      selectedProofs.reduce((sum, p) => sum + (p?.amount ?? 0), 0) < requestedAmount) {
-    setDataOutput({
-      error: "Insufficient balance",
-      details: `Need ${requestedAmount} sat, available: ${balance ?? 0} sat`
-    });
-    return;
-  }
-
-  console.log("[SWAP SEND] Preparing to send", selectedProofs.length, "proofs →",
-    selectedProofs.map(p => p?.amount ?? '?'), "sat total");
-
-  try {
-    // 2. Modern send (v3+ API)
-    const { keep, send } = await wallet.send(requestedAmount, selectedProofs);
-
-    console.log("[SWAP RESULT]", {
-      sendCount: send.length,
-      keepCount: keep.length
-    });
-
-    // 3. Defensive cleanup (important!)
-    const safeSend = send
-      .filter(p => p && typeof p === 'object' && p.secret?.length >= 64)
-      .map(p => ({
-        id: p.id ?? activeKeysetId ?? null,
-        amount: Number(p.amount ?? 0),
-        secret: (p.secret ?? '').trim(),
-        C: p.C ?? ""
-      }));
-
-    const safeKeep = keep
-      .filter(p => p && typeof p === 'object' && p.secret?.length >= 64)
-      .map(p => ({
-        id: p.id ?? activeKeysetId ?? null,
-        amount: Number(p.amount ?? 0),
-        secret: (p.secret ?? '').trim(),
-        C: p.C ?? ""
-      }));
-
-    if (safeSend.length === 0) {
-      throw new Error("No valid send proofs after cleanup");
-    }
-
-    // 4. Create real token string with getEncodedTokenV4
-    const tokenData = {
-      mint: activeMint,
-      proofs: safeSend
-    };
-
-    const tokenString = getEncodedTokenV4(tokenData);
-
-    console.log("[REAL V4 TOKEN STRING]", tokenString);
-
-    // 5. Update storage
-    removeProofs(selectedProofs);           // remove spent
-    if (safeKeep.length > 0) {
-      addProofs(safeKeep);                  // add change
-    }
-
-    // 6. Success — show token string
-    setDataOutput({
-      status: "Token created successfully",
-      classicTokenString: tokenString,
-      sentAmount: safeSend.reduce((s, p) => s + (p?.amount ?? 0), 0),
-      sentCount: safeSend.length,
-      changeAmount: safeKeep.reduce((s, p) => s + (p?.amount ?? 0), 0),
-      changeCount: safeKeep.length,
-      message: "Copy the token string below (starts with cashuA...) and paste it into Cashu.me, Nutstash, Alby or any wallet to receive it."
-    });
-
-    setFormData(prev => ({ ...prev, swapAmount: "" }));
-
-  } catch (err) {
-    console.error("[SWAP ERROR FULL]", err);
-    setDataOutput({
-      error: "Swap failed",
-      message: err.message || String(err),
-      hint: "Check console — possible library or mint issue"
     });
   }
 };*/
