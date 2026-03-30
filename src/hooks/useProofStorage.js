@@ -1,23 +1,34 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+/*import { useState, useEffect, useMemo, useCallback } from "react";
 
 export default function useProofStorage() {
   const [activeMint, setActiveMint] = useState("");
   const [proofsByMint, setProofsByMint] = useState({}); 
   const [hydrated, setHydrated] = useState(false);
 
-  // Utility to validate & clean a proof
+  // BigInt-safe JSON handlers
+  const replacer = (key, value) => 
+    typeof value === 'bigint' ? value.toString() + 'n' : value;
+
+  const reviver = (key, value) => {
+    if (typeof value === 'string' && /^\d+n$/.test(value)) {
+      return BigInt(value.slice(0, -1));
+    }
+    return value;
+  };
+
+  // Clean proof — NEVER replace id with a fake string
   const cleanProof = (p) => {
     if (!p || typeof p !== "object" || !p.secret || typeof p.secret !== "string" || p.secret.length < 64) {
-      return null; // invalid
+      return null;
     }
     return {
       ...p,
-      id: p.id || "missing-id-recovered", // fallback if missing
+      id: p.id || null,           // Keep null if missing — we will fix it later
       amount: Number(p.amount) || 0,
     };
   };
 
-  // Load from localStorage & clean
+  // Load from localStorage
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -27,15 +38,12 @@ export default function useProofStorage() {
 
       const stored = localStorage.getItem("proofsByMint");
       if (stored) {
-        const parsed = JSON.parse(stored);
+        const parsed = JSON.parse(stored, reviver);
         if (typeof parsed === "object" && parsed !== null) {
           const cleaned = {};
           Object.entries(parsed).forEach(([mintUrl, proofs]) => {
             if (Array.isArray(proofs)) {
-              const validProofs = proofs.map(cleanProof).filter(Boolean); // clean & remove invalid
-              if (validProofs.length < proofs.length) {
-                console.warn(`[HOOK LOAD] Cleaned ${proofs.length - validProofs.length} invalid proofs from ${mintUrl}`);
-              }
+              const validProofs = proofs.map(cleanProof).filter(Boolean);
               cleaned[mintUrl] = validProofs;
             }
           });
@@ -44,8 +52,7 @@ export default function useProofStorage() {
       }
     } catch (err) {
       console.error("Failed to load proof storage:", err);
-      // Reset corrupted storage (optional – uncomment if needed)
-      // localStorage.removeItem("proofsByMint");
+      localStorage.removeItem("proofsByMint");
     } finally {
       setHydrated(true);
     }
@@ -57,13 +64,12 @@ export default function useProofStorage() {
     localStorage.setItem("activeMint", activeMint);
   }, [activeMint]);
 
-  // Persist all proofs
+  // Persist proofs
   useEffect(() => {
     if (typeof window === "undefined") return;
-    localStorage.setItem("proofsByMint", JSON.stringify(proofsByMint));
+    localStorage.setItem("proofsByMint", JSON.stringify(proofsByMint, replacer));
   }, [proofsByMint]);
 
-  // ── Current mint data ──────────────────────────────────────────────
   const currentProofs = useMemo(
     () => proofsByMint[activeMint] || [],
     [proofsByMint, activeMint]
@@ -77,155 +83,291 @@ export default function useProofStorage() {
   const getProofsByAmount = useCallback((targetAmount) => {
     if (!targetAmount || targetAmount <= 0) return [];
 
-    const candidates = currentProofs;
-
-    const sorted = [...candidates].sort((a, b) => b.amount - a.amount);
-
+    const sorted = [...currentProofs].sort((a, b) => b.amount - a.amount);
     let sum = 0;
     const selected = [];
 
     for (const proof of sorted) {
       if (sum >= targetAmount) break;
-
-      // Allow larger overshoot if needed — especially for single large proof
       if (sum + proof.amount <= targetAmount * 3 || selected.length === 0) {
         selected.push(proof);
         sum += proof.amount;
       }
     }
-
-    console.log(
-      "[HOOK] getProofsByAmount selected:",
-      selected.length,
-      "proofs for",
-      targetAmount,
-      "sat → amounts:",
-      selected.map(p => p.amount),
-      "→ total:",
-      sum
-    );
-
     return selected;
   }, [currentProofs]);
 
-  // ── Get proofs from ANY mint ───────────────────────────────────────
-  const getProofsByAmountFromMint = useCallback(
-    (mintUrl, targetAmount) => {
-      const mintProofs = proofsByMint[mintUrl] || [];
-      if (!mintProofs.length) return { selected: [], remaining: targetAmount };
+  const getProofsByAmountFromMint = useCallback((mintUrl, targetAmount) => {
+    const mintProofs = proofsByMint[mintUrl] || [];
+    if (!mintProofs.length) return { selected: [], remaining: targetAmount };
 
-      const sorted = [...mintProofs].sort((a, b) => b.amount - a.amount);
+    const sorted = [...mintProofs].sort((a, b) => b.amount - a.amount);
+    let remaining = targetAmount;
+    const selected = [];
 
-      let remaining = targetAmount;
-      const selected = [];
-
-      for (const proof of sorted) {
-        if (remaining <= 0) break;
-        if (proof.amount <= remaining) {
-          selected.push(proof);
-          remaining -= proof.amount;
-        }
+    for (const proof of sorted) {
+      if (remaining <= 0) break;
+      if (proof.amount <= remaining) {
+        selected.push(proof);
+        remaining -= proof.amount;
       }
-      return { selected, remaining };
-    },
-    [proofsByMint]
-  );
+    }
+    return { selected, remaining };
+  }, [proofsByMint]);
 
-  const addProofsToMint = useCallback((mintUrl, newProofs) => {
+  // Improved addProofsToMint with optional keysetId repair
+  const addProofsToMint = useCallback((mintUrl, newProofs, keysetId = null) => {
     if (!mintUrl || !Array.isArray(newProofs) || newProofs.length === 0) return;
 
     setProofsByMint(prev => {
       const existing = prev[mintUrl] || [];
       const existingSecrets = new Set(existing.map(p => p.secret));
+
       const uniqueNew = newProofs
-        .map(cleanProof)  // clean incoming
-        .filter(Boolean)  // remove invalid
-        .filter(p => !existingSecrets.has(p.secret));  // unique
+        .map(p => {
+          const cleaned = cleanProof(p);
+          if (!cleaned) return null;
+
+          // Repair missing ID using the provided keysetId (most important fix)
+          if (!cleaned.id && keysetId) {
+            cleaned.id = keysetId;
+          }
+
+          return cleaned;
+        })
+        .filter(Boolean)
+        .filter(p => !existingSecrets.has(p.secret));
 
       if (uniqueNew.length === 0) return prev;
 
       const newList = [...existing, ...uniqueNew];
-
-      console.log("[HOOK ADD] Added to", mintUrl, ":", uniqueNew.length, "new → total:", newList.length);
-      console.log("[HOOK ADD] Proof IDs after add:", newList.map(p => p.id));
+      console.log(`[HOOK ADD] Added ${uniqueNew.length} proofs to ${mintUrl} → total: ${newList.length}`);
 
       return { ...prev, [mintUrl]: newList };
     });
   }, []);
 
-  // ── Remove proofs from specific mint ───────────────────────────────
   const removeProofsFromMint = useCallback((mintUrl, proofsToRemove) => {
     if (!mintUrl || !proofsToRemove?.length) return;
 
-    const secretsToRemove = new Set(proofsToRemove.map((p) => p.secret).filter(Boolean));
+    const secretsToRemove = new Set(proofsToRemove.map(p => p.secret).filter(Boolean));
 
     setProofsByMint((prev) => {
-      const mintProofs = (prev[mintUrl] || []).filter(p => p && typeof p === 'object' && p.secret);  // defensive clean
-      const newList = mintProofs.filter((p) => !secretsToRemove.has(p.secret));
+      const mintProofs = prev[mintUrl] || [];
+      const newList = mintProofs.filter(p => !secretsToRemove.has(p.secret));
 
-      if (newList.length === mintProofs.length) {
-        console.warn("[HOOK REMOVE] No proofs matched for removal in", mintUrl);
-      } else {
-        console.log("[HOOK REMOVE] Removed", mintProofs.length - newList.length, "proofs from", mintUrl);
+      if (newList.length !== mintProofs.length) {
+        console.log(`[HOOK REMOVE] Removed ${mintProofs.length - newList.length} proofs from ${mintUrl}`);
       }
 
       return { ...prev, [mintUrl]: newList };
     });
   }, []);
 
-  // ── Add to current active mint (backward compatible) ───────────────
-  const addProofs = useCallback(
-    (newProofs) => {
-      if (!activeMint) {
-        console.warn("[HOOK] addProofs called but activeMint is empty!");
-        return;
-      }
-      addProofsToMint(activeMint, newProofs);
-    },
-    [activeMint, addProofsToMint]
-  );
+  const addProofs = useCallback((newProofs, keysetId = null) => {
+    if (!activeMint) {
+      console.warn("[HOOK] addProofs called but no activeMint");
+      return;
+    }
+    addProofsToMint(activeMint, newProofs, keysetId);
+  }, [activeMint, addProofsToMint]);
 
-  // ── Remove from current active mint (backward compatible) ──────────
-  const removeProofs = useCallback(
-    (proofsToRemove) => removeProofsFromMint(activeMint, proofsToRemove),
-    [activeMint, removeProofsFromMint]
-  );
+  const removeProofs = useCallback((proofsToRemove) => {
+    removeProofsFromMint(activeMint, proofsToRemove);
+  }, [activeMint, removeProofsFromMint]);
 
-  // ── Switch active mint ─────────────────────────────────────────────
   const switchMint = useCallback((newUrl) => {
     if (newUrl && typeof newUrl === "string") {
       setActiveMint(newUrl.trim());
     }
   }, []);
 
-  // Optional: reset a mint's proofs if corrupted
   const resetMint = useCallback((mintUrl) => {
     setProofsByMint(prev => {
       const newState = { ...prev };
       delete newState[mintUrl];
       return newState;
     });
-    console.log("[HOOK] Reset proofs for", mintUrl);
   }, []);
 
   return {
-    // Core state & utils
     activeMint,
     switchMint,
     currentProofs,
     balance,
     hydrated,
 
-    // Current mint operations 
     getProofsByAmount,
+    getProofsByAmountFromMint,
     addProofs,
     removeProofs,
 
-    // Multi-mint operations 
     proofsByMint,
-    getProofsByAmountFromMint,
     addProofsToMint,
     removeProofsFromMint,
-    resetMint,  // new: call this if crashes persist, e.g., resetMint(activeMint)
+    resetMint,
+  };
+}*/
+
+import { useState, useEffect, useMemo, useCallback } from "react";
+
+export default function useProofStorage() {
+  const [activeMint, setActiveMint] = useState("");
+  const [proofsByMint, setProofsByMint] = useState({});
+  const [hydrated, setHydrated] = useState(false);
+
+  const replacer = (key, value) =>
+    typeof value === 'bigint' ? value.toString() + 'n' : value;
+
+  const reviver = (key, value) => {
+    if (typeof value === 'string' && /^\d+n$/.test(value)) {
+      return BigInt(value.slice(0, -1));
+    }
+    return value;
+  };
+
+  const cleanProof = (p) => {
+    if (!p || typeof p !== "object" || !p.secret || typeof p.secret !== "string" || p.secret.length < 64) {
+      return null;
+    }
+    return {
+      ...p,
+      id: p.id || null,           // keeps FULL 64-char ID internally
+      amount: Number(p.amount) || 0,
+    };
+  };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const storedActive = localStorage.getItem("activeMint") || "";
+      setActiveMint(storedActive);
+
+      const stored = localStorage.getItem("proofsByMint");
+      if (stored) {
+        const parsed = JSON.parse(stored, reviver);
+        if (typeof parsed === "object" && parsed !== null) {
+          const cleaned = {};
+          Object.entries(parsed).forEach(([mintUrl, proofs]) => {
+            if (Array.isArray(proofs)) {
+              cleaned[mintUrl] = proofs.map(cleanProof).filter(Boolean);
+            }
+          });
+          setProofsByMint(cleaned);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load proof storage:", err);
+      localStorage.removeItem("proofsByMint");
+    } finally {
+      setHydrated(true);
+    }
+  }, []);
+
+  useEffect(() => { if (typeof window !== "undefined") localStorage.setItem("activeMint", activeMint); }, [activeMint]);
+  useEffect(() => { if (typeof window !== "undefined") localStorage.setItem("proofsByMint", JSON.stringify(proofsByMint, replacer)); }, [proofsByMint]);
+
+  const currentProofs = useMemo(() => proofsByMint[activeMint] || [], [proofsByMint, activeMint]);
+  const balance = useMemo(() => currentProofs.reduce((sum, p) => sum + (Number(p?.amount) || 0), 0), [currentProofs]);
+
+  const getProofsByAmount = useCallback((targetAmount) => {
+    if (!targetAmount || targetAmount <= 0) return [];
+    const sorted = [...currentProofs].sort((a, b) => b.amount - a.amount);
+    let sum = 0;
+    const selected = [];
+    for (const proof of sorted) {
+      if (sum >= targetAmount) break;
+      if (sum + proof.amount <= targetAmount * 3 || selected.length === 0) {
+        selected.push(proof);
+        sum += proof.amount;
+      }
+    }
+    return selected;
+  }, [currentProofs]);
+
+  const getProofsByAmountFromMint = useCallback((mintUrl, targetAmount) => {
+    const mintProofs = proofsByMint[mintUrl] || [];
+    if (!mintProofs.length) return { selected: [], remaining: targetAmount };
+    const sorted = [...mintProofs].sort((a, b) => b.amount - a.amount);
+    let remaining = targetAmount;
+    const selected = [];
+    for (const proof of sorted) {
+      if (remaining <= 0) break;
+      if (proof.amount <= remaining) {
+        selected.push(proof);
+        remaining -= proof.amount;
+      }
+    }
+    return { selected, remaining };
+  }, [proofsByMint]);
+
+  const addProofsToMint = useCallback((mintUrl, newProofs, keysetId = null) => {
+    if (!mintUrl || !Array.isArray(newProofs) || newProofs.length === 0) return;
+    setProofsByMint(prev => {
+      const existing = prev[mintUrl] || [];
+      const existingSecrets = new Set(existing.map(p => p.secret));
+      const uniqueNew = newProofs
+        .map(p => {
+          const cleaned = cleanProof(p);
+          if (!cleaned) return null;
+          if (!cleaned.id && keysetId) cleaned.id = keysetId;
+          return cleaned;
+        })
+        .filter(Boolean)
+        .filter(p => !existingSecrets.has(p.secret));
+
+      if (uniqueNew.length === 0) return prev;
+
+      const newList = [...existing, ...uniqueNew];
+      console.log(`[HOOK ADD] Added ${uniqueNew.length} proofs to ${mintUrl} → total: ${newList.length}`);
+      return { ...prev, [mintUrl]: newList };
+    });
+  }, []);
+
+  const removeProofsFromMint = useCallback((mintUrl, proofsToRemove) => {
+    if (!mintUrl || !proofsToRemove?.length) return;
+    const secretsToRemove = new Set(proofsToRemove.map(p => p.secret).filter(Boolean));
+    setProofsByMint(prev => {
+      const mintProofs = prev[mintUrl] || [];
+      const newList = mintProofs.filter(p => !secretsToRemove.has(p.secret));
+      return { ...prev, [mintUrl]: newList };
+    });
+  }, []);
+
+  const addProofs = useCallback((newProofs, keysetId = null) => {
+    if (!activeMint) return;
+    addProofsToMint(activeMint, newProofs, keysetId);
+  }, [activeMint, addProofsToMint]);
+
+  const removeProofs = useCallback((proofsToRemove) => {
+    removeProofsFromMint(activeMint, proofsToRemove);
+  }, [activeMint, removeProofsFromMint]);
+
+  const switchMint = useCallback((newUrl) => {
+    if (newUrl && typeof newUrl === "string") setActiveMint(newUrl.trim());
+  }, []);
+
+  const resetMint = useCallback((mintUrl) => {
+    setProofsByMint(prev => {
+      const newState = { ...prev };
+      delete newState[mintUrl];
+      return newState;
+    });
+  }, []);
+
+  return {
+    activeMint,
+    switchMint,
+    currentProofs,
+    balance,
+    hydrated,
+    getProofsByAmount,
+    getProofsByAmountFromMint,
+    addProofs,
+    removeProofs,
+    proofsByMint,
+    addProofsToMint,
+    removeProofsFromMint,
+    resetMint,
   };
 }
