@@ -1,0 +1,286 @@
+// src/hooks/useCashu.js
+import { useState, useEffect, useRef } from "react";
+import { Mint, Wallet, getEncodedTokenV4, getDecodedToken } from "@cashu/cashu-ts";
+import { replacer, reviver, resolveKeysetId, normalizeMintUrl } from "@/lib/cashu";
+import useProofStorage from "./useProofStorage";
+
+export default function useCashu() {
+  const [wallet, setWallet] = useState(null);
+  const [walletReady, setWalletReady] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [dataOutput, setDataOutput] = useState(null);
+  const [pendingMints, setPendingMints] = useState([]);
+  const isRestored = useRef(false);
+
+  const {
+    addProofs,
+    balance,
+    removeProofs,
+    getProofsByAmount,
+    activeMint,
+    switchMint,
+    hydrated,
+    currentProofs,
+    proofsByMint,
+    addProofsToMint,
+  } = useProofStorage();
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = localStorage.getItem("pendingMints");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved, reviver);
+        if (Array.isArray(parsed)) setPendingMints(parsed);
+      } catch (e) {
+        console.error("[PENDING] Load failed", e);
+        localStorage.removeItem("pendingMints");
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!wallet || !wallet.keys?.id || !hydrated || pendingMints.length === 0) return;
+    pendingMints.forEach((pending) => {
+      if (pending.mintUrl !== activeMint) return;
+      if (pending.preview && pending.state === "ISSUED") {
+        recoverMint(pending.preview, pending.id, pending.mintUrl);
+      } else {
+        pollMintQuote(pending.id, pending.amount, pending.mintUrl);
+      }
+    });
+  }, [wallet, hydrated, activeMint, pendingMints.length]);
+
+  const handleSetMint = async (mintUrlInput) => {
+    let url = mintUrlInput.trim();
+    if (!url) return setDataOutput({ error: "Enter a mint URL" });
+    if (!url.endsWith("/")) url += "/";
+
+    try {
+      const mint = new Mint(url);
+      const info = await mint.getInfo();
+      const newWallet = new Wallet(mint, { unit: "sat" });
+      await newWallet.loadMint();
+
+      const rawKeys = await mint.getKeys();
+      const keysets = rawKeys.keysets || [];
+      const satKeyset = keysets.find((ks) => ks.unit === "sat" && ks.active) || keysets.find((ks) => ks.unit === "sat") || keysets[0];
+
+      if (!satKeyset?.id) throw new Error("No sat keyset found");
+
+      newWallet.bindKeyset(satKeyset.id);
+      await newWallet.loadMint();
+
+      setWallet(newWallet);
+      setWalletReady(true);
+      localStorage.setItem("activeMint", url);
+      switchMint(url);
+
+      setDataOutput({ status: "Mint connected ✓", keysId: satKeyset.id, info });
+    } catch (error) {
+      setWalletReady(false);
+      setDataOutput({ error: "Connection failed", details: error.message });
+    }
+  };
+
+  const handleMint = async (amountInput) => {
+    const amount = parseInt(amountInput, 10);
+    if (isNaN(amount) || amount <= 0) return setDataOutput({ error: "Enter amount > 0" });
+    if (!activeMint || !wallet) return setDataOutput({ error: "Wallet or mint not ready" });
+
+    setIsProcessing(true);
+    try {
+      const quote = await wallet.createMintQuoteBolt11(amount);
+      const pendingEntry = { id: quote.quote, amount, mintUrl: activeMint, state: "UNPAID", timestamp: Date.now(), invoice: quote.request };
+      const updated = [...pendingMints, pendingEntry];
+      setPendingMints(updated);
+      localStorage.setItem("pendingMints", JSON.stringify(updated, replacer));
+      setDataOutput({ status: "Invoice created", invoice: quote.request, quoteId: quote.quote });
+      pollMintQuote(quote.quote, amount, activeMint);
+    } catch (err) {
+      setDataOutput({ error: "Failed to create invoice", details: err.message });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const pollMintQuote = async (quoteId, amount, mintUrl) => {
+    const check = async () => {
+      try {
+        const checked = await wallet.checkMintQuoteBolt11(quoteId);
+        if (checked.state === "PAID" || checked.state === "ISSUED") {
+          const preview = await wallet.ops.mintBolt11(amount, quoteId).prepare();
+          setPendingMints((prev) => {
+            const updated = prev.map((p) => (p.id === quoteId ? { ...p, preview, state: "ISSUED" } : p));
+            localStorage.setItem("pendingMints", JSON.stringify(updated, replacer));
+            return updated;
+          });
+          const proofs = await wallet.completeMint(preview);
+          if (proofs?.length > 0) {
+            addProofsToMint(mintUrl, proofs);
+            setPendingMints((prev) => {
+              const remaining = prev.filter((p) => p.id !== quoteId);
+              localStorage.setItem("pendingMints", JSON.stringify(remaining, replacer));
+              return remaining;
+            });
+            setDataOutput({ status: "Mint successful ✓", receivedProofs: proofs.length });
+          }
+          return;
+        }
+        setTimeout(check, 5000);
+      } catch (err) {
+        setTimeout(check, 10000);
+      }
+    };
+    check();
+  };
+
+  const recoverMint = async (preview, quoteId, mintUrl) => {
+    try {
+      const proofs = await wallet.completeMint(preview);
+      if (proofs?.length > 0) addProofsToMint(mintUrl, proofs);
+    } catch (err) {}
+  };
+
+  const handleMelt = async (invoiceInput) => {
+    if (!wallet) return setDataOutput({ error: "No wallet connected" });
+    const invoice = invoiceInput?.trim();
+    if (!invoice) return setDataOutput({ error: "Please enter a Bolt11 invoice" });
+    setIsProcessing(true);
+    try {
+      const quote = await wallet.createMeltQuoteBolt11(invoice);
+      const totalNeeded = quote.amount + quote.fee_reserve;
+      const proofsToSpend = getProofsByAmount(totalNeeded);
+      if (proofsToSpend.reduce((sum, p) => sum + p.amount, 0) < totalNeeded) {
+        return setDataOutput({ error: "Insufficient balance" });
+      }
+      const meltResult = await wallet.meltProofsBolt11(quote, proofsToSpend);
+      const isPaid = meltResult.paid === true || meltResult.quote?.paid === true;
+      if (!isPaid) throw new Error("Mint could not pay the invoice");
+      removeProofs(proofsToSpend);
+      setDataOutput({ status: "Success ✓", success: `Paid ${quote.amount} sats` });
+    } catch (err) {
+      setDataOutput({ error: "Melt failed", details: err.message });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+// === SWAP SEND (SAFE & SIMPLE) ===
+  const handleSwapSend = async (amountInput) => {
+    const amount = parseInt(amountInput, 10);
+    if (isNaN(amount) || amount <= 0) {
+      return setDataOutput({ error: "Enter a valid amount > 0" });
+    }
+    if (!wallet || !activeMint) {
+      return setDataOutput({ error: "Wallet or mint not ready" });
+    }
+
+    const selectedProofs = getProofsByAmount(amount);
+    if (selectedProofs.reduce((sum, p) => sum + (p.amount || 0), 0) < amount) {
+      return setDataOutput({ error: "Insufficient balance" });
+    }
+
+    setIsProcessing(true);
+    try {
+      // This is the correct, official way
+      const sendResult = await wallet.send(amount, selectedProofs);
+
+      const normalizedMint = normalizeMintUrl(activeMint);
+      const tokenString = getEncodedTokenV4({
+        mint: normalizedMint,
+        proofs: sendResult.send,   // library already gives perfect proofs
+        unit: "sat",
+      });
+
+      // Update local balance
+      removeProofs(selectedProofs);
+      if (sendResult.keep?.length > 0) addProofs(sendResult.keep);
+
+      setDataOutput({
+        status: "✅ V4 Token created successfully",
+        token: tokenString,
+        sentAmount: amount,
+        message: "Copy this token and send it to the receiver",
+      });
+
+      console.log("✅ Token created successfully (length:", tokenString.length, "characters)");
+    } catch (err) {
+      console.error("[SWAP SEND ERROR]", err);
+      setDataOutput({ error: "Swap Send failed", message: err.message || String(err) });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+   // === SWAP CLAIM (FIXED + BETTER DEBUG) ===
+  const handleSwapClaim = async (tokenStringInput) => {
+    const tokenString = tokenStringInput.trim();
+    if (!tokenString) {
+      return setDataOutput({ error: "Enter a token string" });
+    }
+
+    setIsProcessing(true);
+    try {
+      console.log("[CLAIM] Starting claim with token (first 80 chars):", tokenString.substring(0, 80) + "...");
+
+      // ←←← THIS IS THE CORRECT MODERN WAY
+      const receiveResult = await wallet.ops.receive(tokenString).run();
+
+      console.log("[CLAIM] Raw receiveResult from mint:", receiveResult);
+
+      // The library can return either an array of proofs OR an object
+      let receivedProofs = [];
+      if (Array.isArray(receiveResult)) {
+        receivedProofs = receiveResult;
+      } else if (receiveResult?.proofs) {
+        receivedProofs = receiveResult.proofs;
+      } else if (receiveResult?.received) {
+        receivedProofs = receiveResult.received;
+      }
+
+      if (receivedProofs.length === 0) {
+        console.error("[CLAIM] Received empty proofs array from mint");
+        throw new Error("No proofs received from mint – token may already be spent or invalid");
+      }
+
+      // Add to balance
+      addProofsToMint(activeMint, receivedProofs);
+
+      const receivedAmount = receivedProofs.reduce((sum, p) => sum + (p.amount || 0), 0);
+
+      setDataOutput({
+        status: "✅ Claim successful",
+        receivedAmount,
+        receivedCount: receivedProofs.length,
+        message: `Added ${receivedAmount} sat to your balance`,
+      });
+
+      console.log(`[CLAIM] SUCCESS – Added ${receivedAmount} sat`);
+    } catch (error) {
+      console.error("[SWAP CLAIM ERROR]", error);
+      setDataOutput({
+        error: "Claim failed",
+        message: error.message || String(error),
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  return {
+    walletReady,
+    isProcessing,
+    dataOutput,
+    balance,
+    activeMint,
+    currentProofs,
+    hydrated,
+    handleSetMint,
+    handleMint,
+    handleMelt,
+    handleSwapSend,
+    handleSwapClaim,
+    setDataOutput,
+  };
+}

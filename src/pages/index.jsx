@@ -1,4 +1,4 @@
-import useProofStorage from "@/hooks/useProofStorage";
+/*import useProofStorage from "@/hooks/useProofStorage";
 import { Mint, Wallet, getEncodedTokenV4, getDecodedToken} from "@cashu/cashu-ts";
 import React, { useState, useEffect, useRef } from "react";
 
@@ -552,7 +552,7 @@ const handleSwapClaim = async () => {
   <main>
     <div className="cashu-operations-container">
 
-      {/* Mint URL section */}
+      // Mint URL section 
       <div className="section">
         <label htmlFor="mintUrlInput">Mint URL:</label>
         <input
@@ -568,7 +568,7 @@ const handleSwapClaim = async () => {
         </button>
       </div>
 
-      {/* Minting Tokens */}
+      // Minting Tokens 
       <div className="section">
         <h2>Minting Tokens</h2>
         <label htmlFor="mintAmountInput">Amount:</label>
@@ -585,7 +585,7 @@ const handleSwapClaim = async () => {
         </button>
       </div>
 
-      {/* Melt Tokens */}
+      // Melt Tokens 
       <div className="section">
         <h2>Melt Tokens</h2>
         <label htmlFor="meltInvoiceInput">Bolt11 Invoice:</label>
@@ -602,7 +602,7 @@ const handleSwapClaim = async () => {
         </button>
       </div>
 
-      {/* Swap Tokens */}
+      // Swap Tokens 
       <div className="section">
         <h2>Swap Tokens</h2>
 
@@ -666,4 +666,96 @@ const handleSwapClaim = async () => {
 );
 };
 
-export default CocoaWallet;
+export default CocoaWallet;*/
+
+// src/pages/index.jsx
+import React, { useState } from "react";
+import useCashu from "@/hooks/useCashu";
+import useProofStorage from "@/hooks/useProofStorage";
+
+import Navbar from "@/components/layout/Navbar";
+import BalanceDisplay from "@/components/layout/BalanceDisplay";
+import Footer from "@/components/layout/Footer";
+
+import MintSection from "@/components/operations/MintSection";
+import MeltSection from "@/components/operations/MeltSection";
+import SwapSendSection from "@/components/operations/SwapSendSection";
+import SwapClaimSection from "@/components/operations/SwapClaimSection";
+
+export default function Home() {
+  const {
+    walletReady,
+    isProcessing,
+    dataOutput,
+    balance,
+    activeMint,
+    hydrated,
+    handleSetMint,
+    handleMint,
+    handleMelt,
+    handleSwapSend,
+    handleSwapClaim,
+    setDataOutput,
+  } = useCashu();
+
+  const { proofsByMint } = useProofStorage();
+
+  const [formData, setFormData] = useState({
+    mintUrl: "",
+    mintAmount: "",
+    meltInvoice: "",
+    swapAmount: "",
+    swapToken: "",
+  });
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  return (
+    <>
+      <Navbar />
+      <main className="max-w-4xl mx-auto p-6">
+        <BalanceDisplay balance={balance} activeMint={activeMint} proofsByMint={proofsByMint} />
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-8">
+          <MintSection
+            mintUrl={formData.mintUrl}
+            mintAmount={formData.mintAmount}
+            onChange={handleChange}
+            onSetMint={handleSetMint}
+            onMint={handleMint}
+            isProcessing={isProcessing}
+            walletReady={walletReady}
+          />
+          <MeltSection
+            meltInvoice={formData.meltInvoice}
+            onChange={handleChange}
+            onMelt={handleMelt}
+            isProcessing={isProcessing}
+            walletReady={walletReady}
+          />
+          <SwapSendSection
+            swapAmount={formData.swapAmount}
+            onChange={handleChange}
+            onSwapSend={handleSwapSend}
+            isProcessing={isProcessing}
+            walletReady={walletReady}
+          />
+          <SwapClaimSection
+            swapToken={formData.swapToken}
+            onChange={handleChange}
+            onSwapClaim={handleSwapClaim}
+            isProcessing={isProcessing}
+          />
+        </div>
+
+        <pre className="mt-12 p-6 bg-gray-900 text-white rounded-3xl text-sm overflow-auto">
+          {JSON.stringify(dataOutput, null, 2)}
+        </pre>
+      </main>
+      <Footer />
+    </>
+  );
+}
