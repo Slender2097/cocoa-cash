@@ -18,7 +18,7 @@ export default function SwapSendSection({
         name="swapAmount"
         value={swapAmount}
         onChange={onChange}
-        style={{ width: "100%", padding: "10px", marginBottom: "8px" }}
+        style={{ width: "100%", padding: "10px", marginBottom: "8px", color: "#111111", }}
       />
       <button
         onClick={() => onSwapSend(swapAmount)}

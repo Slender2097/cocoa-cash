@@ -18,7 +18,7 @@ export default function SwapClaimSection({
         value={swapToken}
         onChange={onChange}
         placeholder="cashuA..."
-        style={{ width: "100%", padding: "10px", marginBottom: "8px" }}
+        style={{ width: "100%", padding: "10px", marginBottom: "8px", color: "#111111", }}
       />
       <button onClick={() => onSwapClaim(swapToken)} disabled={isProcessing}>
         Claim Token

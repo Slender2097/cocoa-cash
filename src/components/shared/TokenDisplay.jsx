@@ -5,7 +5,7 @@ import Button from "./Button";
 export default function TokenDisplay({ token, label = "Cashu Token" }) {
   const copyToClipboard = () => {
     navigator.clipboard.writeText(token);
-    alert("✅ Token copied to clipboard!");
+    alert(" Token copied to clipboard!");
   };
 
   return (

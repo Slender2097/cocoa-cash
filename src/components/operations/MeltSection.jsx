@@ -19,7 +19,7 @@ export default function MeltSection({
         value={meltInvoice}
         onChange={onChange}
         placeholder="lnbc1..."
-        style={{ width: "100%", padding: "10px", marginBottom: "8px" }}
+        style={{ width: "100%", padding: "10px", marginBottom: "8px", color: "#111111", }}
       />
       <button onClick={() => onMelt(meltInvoice)} disabled={isProcessing || !walletReady}>
         Melt

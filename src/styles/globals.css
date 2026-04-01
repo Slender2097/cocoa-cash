@@ -1,4 +1,4 @@
-@tailwind base;
+/*@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
@@ -102,3 +102,104 @@ main {
     text-wrap: balance;
   }
 }
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-[#14251f] text-[#e8fff7] font-sans;
+    background: radial-gradient(circle at 50% 30%, #1e3a32 0%, #14251f 70%);
+  }
+
+  main {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+}
+
+@layer components {
+  .glass {
+    background: rgba(30, 58, 50, 0.75);
+    backdrop-filter: blur(28px);
+    border: 1px solid rgba(79, 244, 198, 0.35);
+    box-shadow: 0 0 40px -15px rgb(79 244 198);
+  }
+
+  .card {
+    @apply glass rounded-3xl p-8 transition-all duration-300;
+  }
+
+  .card:hover {
+    box-shadow: 0 0 50px -10px rgb(79 244 198);
+    transform: translateY(-4px);
+  }
+
+  // PREMIUM HOLOGRAPHIC BUTTONS 
+  .button {
+    @apply font-semibold py-4 px-8 rounded-3xl w-full text-[#0f1c18] transition-all duration-200;
+    background: linear-gradient(90deg, #4ff4c6, #a3ffe0);
+    box-shadow: 0 0 35px -5px rgb(163 255 224);
+  }
+
+  .button:hover {
+    box-shadow: 0 0 55px -5px rgb(163 255 224);
+    transform: translateY(-2px) scale(1.03);
+  }
+
+  .button:active {
+    transform: scale(0.97);
+  }
+
+  // READABLE INPUTS - BLACK TEXT 
+  .input {
+    @apply w-full bg-[#f0f7f4] border border-[#4ff4c6]/40 focus:border-[#4ff4c6] 
+           rounded-3xl px-6 py-5 text-black placeholder:text-[#1e3a32]/60 
+           focus:outline-none transition-all;
+  }
+}*/
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-[#14251f] text-[#e8fff7] font-sans;
+    background: radial-gradient(circle at center, #1e3a32 0%, #14251f 70%);
+  }
+}
+
+@layer components {
+  .glass {                     /* Dark top area (Balance + status) */
+    background: rgba(30, 58, 50, 0.85);
+    backdrop-filter: blur(24px);
+    border: 1px solid rgba(79, 244, 198, 0.35);
+    box-shadow: 0 0 40px -15px rgb(79 244 198);
+  }
+
+  .light-card {                /* Lighter operation cards */
+    background: rgba(30, 58, 50, 0.45);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(79, 244, 198, 0.25);
+    box-shadow: 0 0 30px -12px rgb(79 244 198);
+  }
+
+  .light-card:hover {
+    background: rgba(30, 58, 50, 0.55);
+    box-shadow: 0 0 40px -10px rgb(79 244 198);
+  }
+
+  .button {
+    @apply bg-[#4ff4c6] hover:bg-[#a3ffe0] text-[#0f1c18] font-semibold 
+           py-4 px-6 rounded-3xl w-full transition-all active:scale-95;
+  }
+
+  .input {
+    @apply w-full bg-[#f0f7f4] border border-[#4ff4c6]/40 focus:border-[#4ff4c6] 
+           rounded-3xl px-6 py-5 text-black placeholder:text-[#050505]/60 
+           focus:outline-none transition-all;
+  }
+}
+
+

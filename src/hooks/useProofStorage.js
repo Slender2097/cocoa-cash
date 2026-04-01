@@ -162,6 +162,7 @@ export default function useProofStorage() {
 }*/
 
 // src/hooks/useProofStorage.js
+// src/hooks/useProofStorage.js
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { replacer, reviver, cleanProof } from "@/lib/cashu";
 
@@ -170,20 +171,43 @@ export default function useProofStorage() {
   const [proofsByMint, setProofsByMint] = useState({});
   const [hydrated, setHydrated] = useState(false);
 
+  const replacerLocal = (key, value) =>
+    typeof value === 'bigint' ? value.toString() + 'n' : value;
+
+  const reviverLocal = (key, value) => {
+    if (typeof value === 'string' && /^\d+n$/.test(value)) {
+      return BigInt(value.slice(0, -1));
+    }
+    return value;
+  };
+
+  const cleanProofLocal = (p) => {
+    if (!p || typeof p !== "object" || !p.secret || typeof p.secret !== "string" || p.secret.length < 64) {
+      return null;
+    }
+    return {
+      ...p,
+      id: p.id || null,
+      amount: Number(p.amount) || 0,
+    };
+  };
+
+  // Load from localStorage
   useEffect(() => {
     if (typeof window === "undefined") return;
+
     try {
       const storedActive = localStorage.getItem("activeMint") || "";
       setActiveMint(storedActive);
 
       const stored = localStorage.getItem("proofsByMint");
       if (stored) {
-        const parsed = JSON.parse(stored, reviver);
+        const parsed = JSON.parse(stored, reviverLocal);
         if (typeof parsed === "object" && parsed !== null) {
           const cleaned = {};
           Object.entries(parsed).forEach(([mintUrl, proofs]) => {
             if (Array.isArray(proofs)) {
-              cleaned[mintUrl] = proofs.map(cleanProof).filter(Boolean);
+              cleaned[mintUrl] = proofs.map(cleanProofLocal).filter(Boolean);
             }
           });
           setProofsByMint(cleaned);
@@ -197,14 +221,16 @@ export default function useProofStorage() {
     }
   }, []);
 
+  // SAVE ONLY AFTER HYDRATION IS COMPLETE
   useEffect(() => {
-    if (typeof window !== "undefined") localStorage.setItem("activeMint", activeMint);
-  }, [activeMint]);
+    if (!hydrated || typeof window === "undefined") return;
+    localStorage.setItem("activeMint", activeMint);
+  }, [activeMint, hydrated]);
 
   useEffect(() => {
-    if (typeof window !== "undefined")
-      localStorage.setItem("proofsByMint", JSON.stringify(proofsByMint, replacer));
-  }, [proofsByMint]);
+    if (!hydrated || typeof window === "undefined") return;
+    localStorage.setItem("proofsByMint", JSON.stringify(proofsByMint, replacerLocal));
+  }, [proofsByMint, hydrated]);
 
   const currentProofs = useMemo(() => proofsByMint[activeMint] || [], [proofsByMint, activeMint]);
   const balance = useMemo(() => currentProofs.reduce((sum, p) => sum + (Number(p?.amount) || 0), 0), [currentProofs]);
@@ -224,32 +250,51 @@ export default function useProofStorage() {
     return selected;
   }, [currentProofs]);
 
+  const getProofsByAmountFromMint = useCallback((mintUrl, targetAmount) => {
+    const mintProofs = proofsByMint[mintUrl] || [];
+    if (!mintProofs.length) return { selected: [], remaining: targetAmount };
+    const sorted = [...mintProofs].sort((a, b) => b.amount - a.amount);
+    let remaining = targetAmount;
+    const selected = [];
+    for (const proof of sorted) {
+      if (remaining <= 0) break;
+      if (proof.amount <= remaining) {
+        selected.push(proof);
+        remaining -= proof.amount;
+      }
+    }
+    return { selected, remaining };
+  }, [proofsByMint]);
+
   const addProofsToMint = useCallback((mintUrl, newProofs, keysetId = null) => {
     if (!mintUrl || !Array.isArray(newProofs) || newProofs.length === 0) return;
-    setProofsByMint((prev) => {
+    setProofsByMint(prev => {
       const existing = prev[mintUrl] || [];
-      const existingSecrets = new Set(existing.map((p) => p.secret));
+      const existingSecrets = new Set(existing.map(p => p.secret));
       const uniqueNew = newProofs
-        .map((p) => {
-          const cleaned = cleanProof(p);
+        .map(p => {
+          const cleaned = cleanProofLocal(p);
           if (!cleaned) return null;
           if (!cleaned.id && keysetId) cleaned.id = keysetId;
           return cleaned;
         })
         .filter(Boolean)
-        .filter((p) => !existingSecrets.has(p.secret));
+        .filter(p => !existingSecrets.has(p.secret));
 
       if (uniqueNew.length === 0) return prev;
-      return { ...prev, [mintUrl]: [...existing, ...uniqueNew] };
+
+      const newList = [...existing, ...uniqueNew];
+      console.log(`[HOOK ADD] Added ${uniqueNew.length} proofs to ${mintUrl} → total: ${newList.length}`);
+      return { ...prev, [mintUrl]: newList };
     });
   }, []);
 
   const removeProofsFromMint = useCallback((mintUrl, proofsToRemove) => {
     if (!mintUrl || !proofsToRemove?.length) return;
-    const secretsToRemove = new Set(proofsToRemove.map((p) => p.secret).filter(Boolean));
-    setProofsByMint((prev) => {
+    const secretsToRemove = new Set(proofsToRemove.map(p => p.secret).filter(Boolean));
+    setProofsByMint(prev => {
       const mintProofs = prev[mintUrl] || [];
-      const newList = mintProofs.filter((p) => !secretsToRemove.has(p.secret));
+      const newList = mintProofs.filter(p => !secretsToRemove.has(p.secret));
       return { ...prev, [mintUrl]: newList };
     });
   }, []);
@@ -267,6 +312,14 @@ export default function useProofStorage() {
     if (newUrl && typeof newUrl === "string") setActiveMint(newUrl.trim());
   }, []);
 
+  const resetMint = useCallback((mintUrl) => {
+    setProofsByMint(prev => {
+      const newState = { ...prev };
+      delete newState[mintUrl];
+      return newState;
+    });
+  }, []);
+
   return {
     activeMint,
     switchMint,
@@ -274,10 +327,12 @@ export default function useProofStorage() {
     balance,
     hydrated,
     getProofsByAmount,
+    getProofsByAmountFromMint,
     addProofs,
     removeProofs,
     proofsByMint,
     addProofsToMint,
     removeProofsFromMint,
+    resetMint,
   };
 }

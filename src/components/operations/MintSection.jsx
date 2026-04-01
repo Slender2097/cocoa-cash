@@ -21,7 +21,7 @@ export default function MintSection({
         value={mintUrl}
         onChange={onChange}
         placeholder="https://mint.example.com"
-        style={{ width: "100%", padding: "10px", marginBottom: "8px" }}
+        style={{ width: "100%", padding: "10px", marginBottom: "8px", color: "#111111", }}
       />
       <button onClick={() => onSetMint(mintUrl)} disabled={isProcessing}>
         Set Mint
@@ -35,7 +35,7 @@ export default function MintSection({
         name="mintAmount"
         value={mintAmount}
         onChange={onChange}
-        style={{ width: "100%", padding: "10px", marginBottom: "8px" }}
+        style={{ width: "100%", padding: "10px", marginBottom: "8px", color: "#111111", }}
       />
       <button onClick={() => onMint(mintAmount)} disabled={isProcessing || !walletReady}>
         Mint
