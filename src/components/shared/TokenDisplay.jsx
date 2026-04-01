@@ -15,7 +15,7 @@ export default function TokenDisplay({ token, label = "Cashu Token" }) {
         {token.length > 120 ? token.substring(0, 120) + "..." : token}
       </pre>
       <Button onClick={copyToClipboard} variant="secondary" className="mt-3 w-full">
-        📋 Copy Token
+        Copy Token
       </Button>
     </div>
   );
