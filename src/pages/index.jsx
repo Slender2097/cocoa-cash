@@ -226,7 +226,7 @@ export default function Home() {
     handleSwapClaim,
   } = useCashu();
 
-  const { proofsByMint } = useProofStorage();
+  const { proofsByMint, switchMint } = useProofStorage();
 
   const [formData, setFormData] = useState({
     mintUrl: "",
@@ -241,9 +241,19 @@ export default function Home() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  // NEW: When user clicks a mint in the navbar
+  const handleSelectMint = (mintUrl) => {
+    setFormData((prev) => ({ ...prev, mintUrl }));   // fill the input box
+    handleSetMint(mintUrl);                           // automatically connect
+    switchMint(mintUrl);                              // switch active mint
+  };
+
   return (
     <>
-      <Navbar activeMint={activeMint} />
+      <Navbar 
+        activeMint={activeMint} 
+        onSwitchMint={handleSelectMint}     
+      />
 
       <div className="max-w-4xl mx-auto px-6 pt-6 pb-12">
 
