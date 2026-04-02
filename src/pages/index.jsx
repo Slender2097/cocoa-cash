@@ -211,6 +211,7 @@ import MintSection from "@/components/operations/MintSection";
 import MeltSection from "@/components/operations/MeltSection";
 import SwapSendSection from "@/components/operations/SwapSendSection";
 import SwapClaimSection from "@/components/operations/SwapClaimSection";
+import SecurityConfig from "@/components/layout/SecurityConfig";
 
 export default function Home() {
   const {
@@ -225,6 +226,9 @@ export default function Home() {
     handleSwapSend,
     handleSwapClaim,
   } = useCashu();
+
+  const [showSecurity, setShowSecurity] = useState(false);
+  const [securityLevel, setSecurityLevel] = useState(1);   // 1 = transient (default)
 
   const { activeMint, switchMint } = useProofStorage();
 
@@ -305,7 +309,21 @@ export default function Home() {
           />
         </div>
       </div>
-    <Footer />
+          {/* Footer with Security Icon */}
+      <Footer onOpenSecurity={() => setShowSecurity(!showSecurity)} />
+
+      {/* Security Config Dropdown */}
+      {showSecurity && (
+        <SecurityConfig 
+          currentLevel={securityLevel} 
+          onUpgrade={(level) => {
+            setSecurityLevel(level);
+            setShowSecurity(false);
+            // TODO: Later we will add real encryption / seed logic here
+            alert(`Upgraded to Level ${level} (logic coming soon)`);
+          }} 
+        />
+      )}
 
     </>
   );
