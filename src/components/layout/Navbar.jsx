@@ -174,6 +174,8 @@ export default function Navbar({ activeMint, onSwitchMint }) {
     }
   }, []);
 
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
+
   const saveMints = (mints) => {
     localStorage.setItem("savedMints", JSON.stringify(mints));
     setSavedMints(mints);
@@ -245,20 +247,32 @@ export default function Navbar({ activeMint, onSwitchMint }) {
         </div>
 
         {/* RIGHT SIDE - First 3 mints */}
-        <div className="flex items-center gap-2">
-          {savedMints.slice(0, 3).map((mint) => (
-            <button
-              key={mint}
-              onClick={() => onSwitchMint(mint)}
-              className={`px-6 py-3 text-xs font-medium rounded-3xl transition-all ${
-                activeMint === mint
-                  ? "bg-[#4ff4c6] text-[#0f1c18]"
-                  : "bg-[#1e3a32] border border-[#4ff4c6]/30 text-[#e8fff7]/90 hover:border-[#4ff4c6]"
-              }`}
-            >
-              {mint.replace("https://", "").replace(/\/$/, "")}
-            </button>
-          ))}
+        {/* RIGHT SIDE - Mint buttons on desktop, Hamburger on mobile */}
+        <div className="flex items-center gap-3">
+          {/* Desktop mint buttons - hidden on mobile */}
+          <div className="hidden md:flex items-center gap-2">
+            {savedMints.slice(0, 3).map((mint) => (
+              <button
+                key={mint}
+                onClick={() => onSwitchMint(mint)}
+                className={`px-6 py-3 text-xs font-medium rounded-3xl transition-all whitespace-nowrap ${
+                  activeMint === mint
+                    ? "bg-[#4ff4c6] text-[#0f1c18] shadow-[0_0_30px_#4ff4c6] scale-105 ring-2 ring-[#a3ffe0]/50"
+                    : "bg-[#1e3a32] border border-[#4ff4c6]/30 text-[#e8fff7]/90 hover:border-[#4ff4c6]"
+                }`}
+              >
+                {mint.replace("https://", "").replace(/\/$/, "")}
+              </button>
+            ))}
+          </div>
+
+          {/* Hamburger button - visible only on mobile */}
+          <button
+            onClick={() => setShowMobileMenu(!showMobileMenu)}
+            className="md:hidden p-2 text-2xl text-[#e8fff7] hover:bg-white/10 rounded-xl"
+          >
+            ☰
+          </button>
         </div>
       </div>
 
@@ -318,6 +332,27 @@ export default function Navbar({ activeMint, onSwitchMint }) {
               </div>
             ))}
           </div>
+        </div>
+      )}
+            {/* MOBILE DROPDOWN MENU */}
+      {showMobileMenu && (
+        <div className="md:hidden absolute top-16 right-6 bg-[#1e3a32] border border-[#4ff4c6]/30 rounded-3xl shadow-xl p-4 w-64 z-50">
+          {savedMints.slice(0, 3).map((mint) => (
+            <button
+              key={mint}
+              onClick={() => {
+                onSwitchMint(mint);
+                setShowMobileMenu(false);
+              }}
+className={`w-full text-left px-6 py-4 rounded-2xl mb-2 transition-all ${
+          activeMint === mint
+            ? "bg-[#4ff4c6] text-[#0f1c18]"     
+            : "hover:bg-white/10 text-[#e8fff7]"
+        }`}
+      >
+        {mint.replace("https://", "").replace(/\/$/, "")}
+            </button>
+          ))}
         </div>
       )}
     </nav>

@@ -198,13 +198,13 @@ export default function useCashu() {
       if (sendResult.keep?.length > 0) addProofs(sendResult.keep);
 
       setDataOutput({
-        status: "✅ V4 Token created successfully",
+        status: " V4 Token created successfully",
         token: tokenString,
         sentAmount: amount,
         message: "Copy this token and send it to the receiver",
       });
 
-      console.log("✅ Token created successfully (length:", tokenString.length, "characters)");
+      console.log(" Token created successfully (length:", tokenString.length, "characters)");
     } catch (err) {
       console.error("[SWAP SEND ERROR]", err);
       setDataOutput({ error: "Swap Send failed", message: err.message || String(err) });
@@ -250,7 +250,7 @@ export default function useCashu() {
       const receivedAmount = receivedProofs.reduce((sum, p) => sum + (p.amount || 0), 0);
 
       setDataOutput({
-        status: "✅ Claim successful",
+        status: " Claim successful",
         receivedAmount,
         receivedCount: receivedProofs.length,
         message: `Added ${receivedAmount} sat to your balance`,

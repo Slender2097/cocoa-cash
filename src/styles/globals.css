@@ -200,6 +200,38 @@ main {
            rounded-3xl px-6 py-5 text-black placeholder:text-[#050505]/60 
            focus:outline-none transition-all;
   }
+
+  /* Nixie Tube Effect */
+.nixie-display {
+  text-shadow: 
+    0 0 10px #4ff4c6,
+    0 0 20px #4ff4c6,
+    0 0 40px #4ff4c6,
+    0 0 60px #a3ffe0;
+  font-family: "Courier New", monospace;
+  letter-spacing: -6px;
+}
+
+@keyframes nixie-flicker {
+  0%, 100% { opacity: 1; }
+  42% { opacity: 1; }
+  44% { opacity: 0.85; }
+  46% { opacity: 1; }
+  48% { opacity: 0.92; }
+}
+
+.animate-nixie-flicker {
+  animation: nixie-flicker 0.8s linear;
+}
+
+.nixie-display {
+  text-shadow: 
+    0 0 12px #4ff4c6,
+    0 0 25px #4ff4c6,
+    0 0 40px #a3ffe0;
+  font-family: "Courier New", monospace;
+  letter-spacing: -4px;
+}
 }
 
 

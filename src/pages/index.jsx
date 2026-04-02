@@ -218,7 +218,7 @@ export default function Home() {
     isProcessing,
     dataOutput,
     balance,
-    activeMint,
+    //activeMint,
     handleSetMint,
     handleMint,
     handleMelt,
@@ -226,7 +226,7 @@ export default function Home() {
     handleSwapClaim,
   } = useCashu();
 
-  const { proofsByMint, switchMint } = useProofStorage();
+  const { activeMint, switchMint } = useProofStorage();
 
   const [formData, setFormData] = useState({
     mintUrl: "",
@@ -243,9 +243,9 @@ export default function Home() {
 
   // NEW: When user clicks a mint in the navbar
   const handleSelectMint = (mintUrl) => {
-    setFormData((prev) => ({ ...prev, mintUrl }));   // fill the input box
-    handleSetMint(mintUrl);                           // automatically connect
-    switchMint(mintUrl);                              // switch active mint
+    setFormData((prev) => ({ ...prev, mintUrl }));   
+    handleSetMint(mintUrl);                           
+    switchMint(mintUrl);                              
   };
 
   return (
@@ -259,15 +259,6 @@ export default function Home() {
 
         {/* Top Information Area */}
         <BalanceDisplay balance={balance || 0} />
-
-        {activeMint && (
-          <div className="text-center mb-8">
-            <p className="text-xs text-[#4ff4c6] tracking-widest">CONNECTED TO</p>
-            <p className="text-sm text-[#e8fff7] font-medium">
-              {activeMint.replace("https://", "").replace(/\/$/, "")}
-            </p>
-          </div>
-        )}
 
         {dataOutput && (
           <div className="mb-10 p-5 glass rounded-3xl border border-[#4ff4c6]/30">
