@@ -1,4 +1,8 @@
-/*import { useState, useEffect, useMemo, useCallback } from "react";
+/*
+
+ONE
+
+import { useState, useEffect, useMemo, useCallback } from "react";
 
 export default function useProofStorage() {
   const [activeMint, setActiveMint] = useState("");
@@ -159,10 +163,901 @@ export default function useProofStorage() {
     removeProofsFromMint,
     resetMint,
   };
-}*/
+}
+
+TWO
 
 // src/hooks/useProofStorage.js
 // src/hooks/useProofStorage.js
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { replacer, reviver, cleanProof } from "@/lib/cashu";
+
+export default function useProofStorage() {
+  const [activeMint, setActiveMint] = useState("");
+  const [proofsByMint, setProofsByMint] = useState({});
+  const [hydrated, setHydrated] = useState(false);
+
+  const replacerLocal = (key, value) =>
+    typeof value === 'bigint' ? value.toString() + 'n' : value;
+
+  const reviverLocal = (key, value) => {
+    if (typeof value === 'string' && /^\d+n$/.test(value)) {
+      return BigInt(value.slice(0, -1));
+    }
+    return value;
+  };
+
+  const cleanProofLocal = (p) => {
+    if (!p || typeof p !== "object" || !p.secret || typeof p.secret !== "string" || p.secret.length < 64) {
+      return null;
+    }
+    return {
+      ...p,
+      id: p.id || null,
+      amount: Number(p.amount) || 0,
+    };
+  };
+
+  // Load from localStorage
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      const storedActive = localStorage.getItem("activeMint") || "";
+      setActiveMint(storedActive);
+
+      const stored = localStorage.getItem("proofsByMint");
+      if (stored) {
+        const parsed = JSON.parse(stored, reviverLocal);
+        if (typeof parsed === "object" && parsed !== null) {
+          const cleaned = {};
+          Object.entries(parsed).forEach(([mintUrl, proofs]) => {
+            if (Array.isArray(proofs)) {
+              cleaned[mintUrl] = proofs.map(cleanProofLocal).filter(Boolean);
+            }
+          });
+          setProofsByMint(cleaned);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load proof storage:", err);
+      localStorage.removeItem("proofsByMint");
+    } finally {
+      setHydrated(true);
+    }
+  }, []);
+
+  // SAVE ONLY AFTER HYDRATION IS COMPLETE
+  useEffect(() => {
+    if (!hydrated || typeof window === "undefined") return;
+    localStorage.setItem("activeMint", activeMint);
+  }, [activeMint, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated || typeof window === "undefined") return;
+    localStorage.setItem("proofsByMint", JSON.stringify(proofsByMint, replacerLocal));
+  }, [proofsByMint, hydrated]);
+
+  const currentProofs = useMemo(() => proofsByMint[activeMint] || [], [proofsByMint, activeMint]);
+  const balance = useMemo(() => currentProofs.reduce((sum, p) => sum + (Number(p?.amount) || 0), 0), [currentProofs]);
+
+  const getProofsByAmount = useCallback((targetAmount) => {
+    if (!targetAmount || targetAmount <= 0) return [];
+    const sorted = [...currentProofs].sort((a, b) => b.amount - a.amount);
+    let sum = 0;
+    const selected = [];
+    for (const proof of sorted) {
+      if (sum >= targetAmount) break;
+      if (sum + proof.amount <= targetAmount * 3 || selected.length === 0) {
+        selected.push(proof);
+        sum += proof.amount;
+      }
+    }
+    return selected;
+  }, [currentProofs]);
+
+  const getProofsByAmountFromMint = useCallback((mintUrl, targetAmount) => {
+    const mintProofs = proofsByMint[mintUrl] || [];
+    if (!mintProofs.length) return { selected: [], remaining: targetAmount };
+    const sorted = [...mintProofs].sort((a, b) => b.amount - a.amount);
+    let remaining = targetAmount;
+    const selected = [];
+    for (const proof of sorted) {
+      if (remaining <= 0) break;
+      if (proof.amount <= remaining) {
+        selected.push(proof);
+        remaining -= proof.amount;
+      }
+    }
+    return { selected, remaining };
+  }, [proofsByMint]);
+
+  const addProofsToMint = useCallback((mintUrl, newProofs, keysetId = null) => {
+    if (!mintUrl || !Array.isArray(newProofs) || newProofs.length === 0) return;
+    setProofsByMint(prev => {
+      const existing = prev[mintUrl] || [];
+      const existingSecrets = new Set(existing.map(p => p.secret));
+      const uniqueNew = newProofs
+        .map(p => {
+          const cleaned = cleanProofLocal(p);
+          if (!cleaned) return null;
+          if (!cleaned.id && keysetId) cleaned.id = keysetId;
+          return cleaned;
+        })
+        .filter(Boolean)
+        .filter(p => !existingSecrets.has(p.secret));
+
+      if (uniqueNew.length === 0) return prev;
+
+      const newList = [...existing, ...uniqueNew];
+      console.log(`[HOOK ADD] Added ${uniqueNew.length} proofs to ${mintUrl} → total: ${newList.length}`);
+      return { ...prev, [mintUrl]: newList };
+    });
+  }, []);
+
+  const removeProofsFromMint = useCallback((mintUrl, proofsToRemove) => {
+    if (!mintUrl || !proofsToRemove?.length) return;
+    const secretsToRemove = new Set(proofsToRemove.map(p => p.secret).filter(Boolean));
+    setProofsByMint(prev => {
+      const mintProofs = prev[mintUrl] || [];
+      const newList = mintProofs.filter(p => !secretsToRemove.has(p.secret));
+      return { ...prev, [mintUrl]: newList };
+    });
+  }, []);
+
+  const addProofs = useCallback((newProofs, keysetId = null) => {
+    if (!activeMint) return;
+    addProofsToMint(activeMint, newProofs, keysetId);
+  }, [activeMint, addProofsToMint]);
+
+  const removeProofs = useCallback((proofsToRemove) => {
+    removeProofsFromMint(activeMint, proofsToRemove);
+  }, [activeMint, removeProofsFromMint]);
+
+  const switchMint = useCallback((newUrl) => {
+    if (newUrl && typeof newUrl === "string") setActiveMint(newUrl.trim());
+  }, []);
+
+  const resetMint = useCallback((mintUrl) => {
+    setProofsByMint(prev => {
+      const newState = { ...prev };
+      delete newState[mintUrl];
+      return newState;
+    });
+  }, []);
+
+  return {
+    activeMint,
+    switchMint,
+    currentProofs,
+    balance,
+    hydrated,
+    getProofsByAmount,
+    getProofsByAmountFromMint,
+    addProofs,
+    removeProofs,
+    proofsByMint,
+    addProofsToMint,
+    removeProofsFromMint,
+    resetMint,
+  };
+}
+
+TRHEE
+
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { replacer, reviver, cleanProof } from "@/lib/cashu";
+import { encrypt, decrypt } from "@/lib/encryption";
+
+let currentPassword = null; // in-memory password (never saved)
+
+export default function useProofStorage() {
+  const [activeMint, setActiveMint] = useState("");
+  const [proofsByMint, setProofsByMint] = useState({});
+  const [hydrated, setHydrated] = useState(false);
+  const [securityLevel, setSecurityLevel] = useState(1); // 1 = transient, 2 = password, 3 = seed
+
+  const replacerLocal = (key, value) =>
+    typeof value === 'bigint' ? value.toString() + 'n' : value;
+
+  const reviverLocal = (key, value) => {
+    if (typeof value === 'string' && /^\d+n$/.test(value)) {
+      return BigInt(value.slice(0, -1));
+    }
+    return value;
+  };
+
+  const cleanProofLocal = (p) => {
+    if (!p || typeof p !== "object" || !p.secret || typeof p.secret !== "string" || p.secret.length < 64) {
+      return null;
+    }
+    return {
+      ...p,
+      id: p.id || null,
+      amount: Number(p.amount) || 0,
+    };
+  };
+
+  // Helper to clean proofs after loading (used for both encrypted and plain)
+  const processStoredProofs = (parsed) => {
+    const cleaned = {};
+    Object.entries(parsed || {}).forEach(([mintUrl, proofs]) => {
+      if (Array.isArray(proofs)) {
+        cleaned[mintUrl] = proofs.map(cleanProofLocal).filter(Boolean);
+      }
+    });
+    return cleaned;
+  };
+
+  // Load from localStorage (with encryption support)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      const storedLevel = localStorage.getItem("securityLevel") || 1;
+      setSecurityLevel(Number(storedLevel));
+
+      const storedActive = localStorage.getItem("activeMint") || "";
+      setActiveMint(storedActive);
+
+      const stored = localStorage.getItem("proofsByMint");
+      if (!stored) {
+        setHydrated(true);
+        return;
+      }
+
+      if (Number(storedLevel) > 1) {
+        // Encrypted case
+        const encryptedData = JSON.parse(stored);
+        decrypt(encryptedData, currentPassword).then((decrypted) => {
+          const cleaned = processStoredProofs(decrypted);
+          setProofsByMint(cleaned);
+        }).catch(err => {
+          console.error("Decryption failed:", err);
+          setProofsByMint({});
+        });
+      } else {
+        // Plain case (original behavior)
+        const parsed = JSON.parse(stored, reviverLocal);
+        const cleaned = processStoredProofs(parsed);
+        setProofsByMint(cleaned);
+      }
+    } catch (err) {
+      console.error("Failed to load proof storage:", err);
+      localStorage.removeItem("proofsByMint");
+    } finally {
+      setHydrated(true);
+    }
+  }, []);
+
+  // SAVE activeMint (only after hydration)
+  useEffect(() => {
+    if (!hydrated || typeof window === "undefined") return;
+    localStorage.setItem("activeMint", activeMint);
+  }, [activeMint, hydrated]);
+
+  // SAVE securityLevel (only after hydration)
+  useEffect(() => {
+    if (!hydrated || typeof window === "undefined") return;
+    localStorage.setItem("securityLevel", securityLevel);
+  }, [securityLevel, hydrated]);
+
+  // SAVE proofsByMint (with encryption support - only after hydration)
+  useEffect(() => {
+    if (!hydrated || typeof window === "undefined") return;
+
+    const saveProofs = async () => {
+      try {
+        if (securityLevel > 1 && currentPassword) {
+          // Encrypted save
+          const encrypted = await encrypt(proofsByMint, currentPassword);
+          localStorage.setItem("proofsByMint", JSON.stringify(encrypted));
+        } else {
+          // Plain save (original behavior)
+          localStorage.setItem("proofsByMint", JSON.stringify(proofsByMint, replacerLocal));
+        }
+      } catch (err) {
+        console.error("Failed to save proofs:", err);
+      }
+    };
+
+    saveProofs();
+  }, [proofsByMint, hydrated, securityLevel]);
+
+  const currentProofs = useMemo(() => proofsByMint[activeMint] || [], [proofsByMint, activeMint]);
+  const balance = useMemo(() => currentProofs.reduce((sum, p) => sum + (Number(p?.amount) || 0), 0), [currentProofs]);
+
+  const getProofsByAmount = useCallback((targetAmount) => {
+    if (!targetAmount || targetAmount <= 0) return [];
+    const sorted = [...currentProofs].sort((a, b) => b.amount - a.amount);
+    let sum = 0;
+    const selected = [];
+    for (const proof of sorted) {
+      if (sum >= targetAmount) break;
+      if (sum + proof.amount <= targetAmount * 3 || selected.length === 0) {
+        selected.push(proof);
+        sum += proof.amount;
+      }
+    }
+    return selected;
+  }, [currentProofs]);
+
+  const getProofsByAmountFromMint = useCallback((mintUrl, targetAmount) => {
+    const mintProofs = proofsByMint[mintUrl] || [];
+    if (!mintProofs.length) return { selected: [], remaining: targetAmount };
+    const sorted = [...mintProofs].sort((a, b) => b.amount - a.amount);
+    let remaining = targetAmount;
+    const selected = [];
+    for (const proof of sorted) {
+      if (remaining <= 0) break;
+      if (proof.amount <= remaining) {
+        selected.push(proof);
+        remaining -= proof.amount;
+      }
+    }
+    return { selected, remaining };
+  }, [proofsByMint]);
+
+  const addProofsToMint = useCallback((mintUrl, newProofs, keysetId = null) => {
+    if (!mintUrl || !Array.isArray(newProofs) || newProofs.length === 0) return;
+    setProofsByMint(prev => {
+      const existing = prev[mintUrl] || [];
+      const existingSecrets = new Set(existing.map(p => p.secret));
+      const uniqueNew = newProofs
+        .map(p => {
+          const cleaned = cleanProofLocal(p);
+          if (!cleaned) return null;
+          if (!cleaned.id && keysetId) cleaned.id = keysetId;
+          return cleaned;
+        })
+        .filter(Boolean)
+        .filter(p => !existingSecrets.has(p.secret));
+
+      if (uniqueNew.length === 0) return prev;
+
+      const newList = [...existing, ...uniqueNew];
+      console.log(`[HOOK ADD] Added ${uniqueNew.length} proofs to ${mintUrl} → total: ${newList.length}`);
+      return { ...prev, [mintUrl]: newList };
+    });
+  }, []);
+
+  const removeProofsFromMint = useCallback((mintUrl, proofsToRemove) => {
+    if (!mintUrl || !proofsToRemove?.length) return;
+    const secretsToRemove = new Set(proofsToRemove.map(p => p.secret).filter(Boolean));
+    setProofsByMint(prev => {
+      const mintProofs = prev[mintUrl] || [];
+      const newList = mintProofs.filter(p => !secretsToRemove.has(p.secret));
+      return { ...prev, [mintUrl]: newList };
+    });
+  }, []);
+
+  const addProofs = useCallback((newProofs, keysetId = null) => {
+    if (!activeMint) return;
+    addProofsToMint(activeMint, newProofs, keysetId);
+  }, [activeMint, addProofsToMint]);
+
+  const removeProofs = useCallback((proofsToRemove) => {
+    removeProofsFromMint(activeMint, proofsToRemove);
+  }, [activeMint, removeProofsFromMint]);
+
+  const switchMint = useCallback((newUrl) => {
+    if (newUrl && typeof newUrl === "string") setActiveMint(newUrl.trim());
+  }, []);
+
+  const resetMint = useCallback((mintUrl) => {
+    setProofsByMint(prev => {
+      const newState = { ...prev };
+      delete newState[mintUrl];
+      return newState;
+    });
+  }, []);
+
+  return {
+    activeMint,
+    switchMint,
+    currentProofs,
+    balance,
+    hydrated,
+    getProofsByAmount,
+    getProofsByAmountFromMint,
+    addProofs,
+    removeProofs,
+    proofsByMint,
+    addProofsToMint,
+    removeProofsFromMint,
+    resetMint,
+    securityLevel,
+    setSecurityLevel,
+    // Note: currentPassword is managed in-memory outside the hook.
+    // You can add a setCurrentPassword helper if needed in your app (e.g. after user login).
+  };
+}
+
+Fourth
+
+// src/hooks/useProofStorage.js
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { replacer, reviver, cleanProof } from "@/lib/cashu";
+import { encrypt, decrypt } from "@/lib/encryption";
+
+// Module-level in-memory password (shared between files)
+let currentPassword = null;
+
+// Exported setter so index.jsx can call it
+export function setCurrentPassword(password) {
+  currentPassword = password;
+}
+
+export default function useProofStorage() {
+  const [activeMint, setActiveMint] = useState("");
+  const [proofsByMint, setProofsByMint] = useState({});
+  const [hydrated, setHydrated] = useState(false);
+  const [securityLevel, setSecurityLevel] = useState(1); // 1 = transient, 2 = password, 3 = seed
+
+  const replacerLocal = (key, value) =>
+    typeof value === 'bigint' ? value.toString() + 'n' : value;
+
+  const reviverLocal = (key, value) => {
+    if (typeof value === 'string' && /^\d+n$/.test(value)) {
+      return BigInt(value.slice(0, -1));
+    }
+    return value;
+  };
+
+  const cleanProofLocal = (p) => {
+    if (!p || typeof p !== "object" || !p.secret || typeof p.secret !== "string" || p.secret.length < 64) {
+      return null;
+    }
+    return {
+      ...p,
+      id: p.id || null,
+      amount: Number(p.amount) || 0,
+    };
+  };
+
+  // Helper to clean proofs after loading (used for both encrypted and plain)
+  const processStoredProofs = (parsed) => {
+    const cleaned = {};
+    Object.entries(parsed || {}).forEach(([mintUrl, proofs]) => {
+      if (Array.isArray(proofs)) {
+        cleaned[mintUrl] = proofs.map(cleanProofLocal).filter(Boolean);
+      }
+    });
+    return cleaned;
+  };
+
+  // Load from localStorage (with encryption support)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      const storedLevel = localStorage.getItem("securityLevel") || 1;
+      setSecurityLevel(Number(storedLevel));
+
+      const storedActive = localStorage.getItem("activeMint") || "";
+      setActiveMint(storedActive);
+
+      const stored = localStorage.getItem("proofsByMint");
+      if (!stored) {
+        setHydrated(true);
+        return;
+      }
+
+      if (Number(storedLevel) > 1) {
+        // Encrypted case
+        const encryptedData = JSON.parse(stored);
+        decrypt(encryptedData, currentPassword).then((decrypted) => {
+          const cleaned = processStoredProofs(decrypted);
+          setProofsByMint(cleaned);
+        }).catch(err => {
+          console.error("Decryption failed:", err);
+          setProofsByMint({});
+        });
+      } else {
+        // Plain case (original behavior)
+        const parsed = JSON.parse(stored, reviverLocal);
+        const cleaned = processStoredProofs(parsed);
+        setProofsByMint(cleaned);
+      }
+    } catch (err) {
+      console.error("Failed to load proof storage:", err);
+      localStorage.removeItem("proofsByMint");
+    } finally {
+      setHydrated(true);
+    }
+  }, []);
+
+  // SAVE activeMint (only after hydration)
+  useEffect(() => {
+    if (!hydrated || typeof window === "undefined") return;
+    localStorage.setItem("activeMint", activeMint);
+  }, [activeMint, hydrated]);
+
+  // SAVE securityLevel (only after hydration)
+  useEffect(() => {
+    if (!hydrated || typeof window === "undefined") return;
+    localStorage.setItem("securityLevel", securityLevel);
+  }, [securityLevel, hydrated]);
+
+  // SAVE proofsByMint (with encryption support - only after hydration)
+  useEffect(() => {
+    if (!hydrated || typeof window === "undefined") return;
+
+    const saveProofs = async () => {
+      try {
+        if (securityLevel > 1 && currentPassword) {
+          // Encrypted save
+          const encrypted = await encrypt(proofsByMint, currentPassword);
+          localStorage.setItem("proofsByMint", JSON.stringify(encrypted));
+        } else {
+          // Plain save (original behavior)
+          localStorage.setItem("proofsByMint", JSON.stringify(proofsByMint, replacerLocal));
+        }
+      } catch (err) {
+        console.error("Failed to save proofs:", err);
+      }
+    };
+
+    saveProofs();
+  }, [proofsByMint, hydrated, securityLevel]);
+
+  const currentProofs = useMemo(() => proofsByMint[activeMint] || [], [proofsByMint, activeMint]);
+  const balance = useMemo(() => currentProofs.reduce((sum, p) => sum + (Number(p?.amount) || 0), 0), [currentProofs]);
+
+  const getProofsByAmount = useCallback((targetAmount) => {
+    if (!targetAmount || targetAmount <= 0) return [];
+    const sorted = [...currentProofs].sort((a, b) => b.amount - a.amount);
+    let sum = 0;
+    const selected = [];
+    for (const proof of sorted) {
+      if (sum >= targetAmount) break;
+      if (sum + proof.amount <= targetAmount * 3 || selected.length === 0) {
+        selected.push(proof);
+        sum += proof.amount;
+      }
+    }
+    return selected;
+  }, [currentProofs]);
+
+  const getProofsByAmountFromMint = useCallback((mintUrl, targetAmount) => {
+    const mintProofs = proofsByMint[mintUrl] || [];
+    if (!mintProofs.length) return { selected: [], remaining: targetAmount };
+    const sorted = [...mintProofs].sort((a, b) => b.amount - a.amount);
+    let remaining = targetAmount;
+    const selected = [];
+    for (const proof of sorted) {
+      if (remaining <= 0) break;
+      if (proof.amount <= remaining) {
+        selected.push(proof);
+        remaining -= proof.amount;
+      }
+    }
+    return { selected, remaining };
+  }, [proofsByMint]);
+
+  const addProofsToMint = useCallback((mintUrl, newProofs, keysetId = null) => {
+    if (!mintUrl || !Array.isArray(newProofs) || newProofs.length === 0) return;
+    setProofsByMint(prev => {
+      const existing = prev[mintUrl] || [];
+      const existingSecrets = new Set(existing.map(p => p.secret));
+      const uniqueNew = newProofs
+        .map(p => {
+          const cleaned = cleanProofLocal(p);
+          if (!cleaned) return null;
+          if (!cleaned.id && keysetId) cleaned.id = keysetId;
+          return cleaned;
+        })
+        .filter(Boolean)
+        .filter(p => !existingSecrets.has(p.secret));
+
+      if (uniqueNew.length === 0) return prev;
+
+      const newList = [...existing, ...uniqueNew];
+      console.log(`[HOOK ADD] Added ${uniqueNew.length} proofs to ${mintUrl} → total: ${newList.length}`);
+      return { ...prev, [mintUrl]: newList };
+    });
+  }, []);
+
+  const removeProofsFromMint = useCallback((mintUrl, proofsToRemove) => {
+    if (!mintUrl || !proofsToRemove?.length) return;
+    const secretsToRemove = new Set(proofsToRemove.map(p => p.secret).filter(Boolean));
+    setProofsByMint(prev => {
+      const mintProofs = prev[mintUrl] || [];
+      const newList = mintProofs.filter(p => !secretsToRemove.has(p.secret));
+      return { ...prev, [mintUrl]: newList };
+    });
+  }, []);
+
+  const addProofs = useCallback((newProofs, keysetId = null) => {
+    if (!activeMint) return;
+    addProofsToMint(activeMint, newProofs, keysetId);
+  }, [activeMint, addProofsToMint]);
+
+  const removeProofs = useCallback((proofsToRemove) => {
+    removeProofsFromMint(activeMint, proofsToRemove);
+  }, [activeMint, removeProofsFromMint]);
+
+  const switchMint = useCallback((newUrl) => {
+    if (newUrl && typeof newUrl === "string") setActiveMint(newUrl.trim());
+  }, []);
+
+  const resetMint = useCallback((mintUrl) => {
+    setProofsByMint(prev => {
+      const newState = { ...prev };
+      delete newState[mintUrl];
+      return newState;
+    });
+  }, []);
+
+  return {
+    activeMint,
+    switchMint,
+    currentProofs,
+    balance,
+    hydrated,
+    getProofsByAmount,
+    getProofsByAmountFromMint,
+    addProofs,
+    removeProofs,
+    proofsByMint,
+    addProofsToMint,
+    removeProofsFromMint,
+    resetMint,
+    securityLevel,
+    setSecurityLevel,
+    setCurrentPassword, 
+  };
+}
+
+Kind of works 
+
+
+// src/hooks/useProofStorage.js
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { replacer, reviver, cleanProof } from "@/lib/cashu";
+import { encrypt, decrypt } from "@/lib/encryption";
+
+// Module-level in-memory password (shared between files)
+let currentPassword = null;
+
+// Exported setter so index.jsx can call it
+export function setCurrentPassword(password) {
+  currentPassword = password;
+}
+
+// New: clear password when downgrading or logging out
+export function clearCurrentPassword() {
+  currentPassword = null;
+}
+
+export default function useProofStorage() {
+  // ← FIXED: Load securityLevel immediately (no race condition)
+  const [securityLevel, setSecurityLevel] = useState(() => {
+    if (typeof window === "undefined") return 1;
+    return parseInt(localStorage.getItem("securityLevel") || "1", 10);
+  });
+
+  const [activeMint, setActiveMint] = useState("");
+  const [proofsByMint, setProofsByMint] = useState({});
+  const [hydrated, setHydrated] = useState(false);
+
+  const replacerLocal = (key, value) =>
+    typeof value === 'bigint' ? value.toString() + 'n' : value;
+
+  const reviverLocal = (key, value) => {
+    if (typeof value === 'string' && /^\d+n$/.test(value)) {
+      return BigInt(value.slice(0, -1));
+    }
+    return value;
+  };
+
+  const cleanProofLocal = (p) => {
+    if (!p || typeof p !== "object" || !p.secret || typeof p.secret !== "string" || p.secret.length < 64) {
+      return null;
+    }
+    return {
+      ...p,
+      id: p.id || null,
+      amount: Number(p.amount) || 0,
+    };
+  };
+
+  // Helper to clean proofs after loading (used for both encrypted and plain)
+  const processStoredProofs = (parsed) => {
+    const cleaned = {};
+    Object.entries(parsed || {}).forEach(([mintUrl, proofs]) => {
+      if (Array.isArray(proofs)) {
+        cleaned[mintUrl] = proofs.map(cleanProofLocal).filter(Boolean);
+      }
+    });
+    return cleaned;
+  };
+
+  // LOAD from localStorage (with safe decryption)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const storedActive = localStorage.getItem("activeMint") || "";
+      setActiveMint(storedActive);
+      const stored = localStorage.getItem("proofsByMint");
+      if (!stored) {
+        setHydrated(true);
+        return;
+      }
+      if (securityLevel > 1) {
+        if (!currentPassword) {
+          console.log("🔒 Waiting for password before decrypting wallet...");
+          setHydrated(true);
+          return;
+        }
+        // Decrypt now that we have the password
+        const encryptedData = JSON.parse(stored);
+        decrypt(encryptedData, currentPassword)
+          .then((decrypted) => {
+            const cleaned = processStoredProofs(decrypted);
+            setProofsByMint(cleaned);
+            console.log("✅ Wallet successfully decrypted and loaded");
+          })
+          .catch((err) => {
+            console.error("❌ Decryption failed:", err.message);
+            setProofsByMint({});
+          });
+      } else {
+        // Level 1 - plain text
+        const parsed = JSON.parse(stored, reviverLocal);
+        const cleaned = processStoredProofs(parsed);
+        setProofsByMint(cleaned);
+      }
+    } catch (err) {
+      console.error("Failed to load proof storage:", err);
+    } finally {
+      setHydrated(true);
+    }
+  }, [securityLevel, currentPassword]); // ← now depends on both
+
+  // SAVE activeMint (only after hydration)
+  useEffect(() => {
+    if (!hydrated || typeof window === "undefined") return;
+    localStorage.setItem("activeMint", activeMint);
+  }, [activeMint, hydrated]);
+
+  // SAVE securityLevel (only after hydration)
+  useEffect(() => {
+    if (!hydrated || typeof window === "undefined") return;
+    localStorage.setItem("securityLevel", securityLevel);
+  }, [securityLevel, hydrated]);
+
+  // SAVE proofsByMint (with encryption support - only after hydration)
+  useEffect(() => {
+    if (!hydrated || typeof window === "undefined") return;
+
+    const saveProofs = async () => {
+      try {
+        if (securityLevel > 1 && currentPassword) {
+          // Encrypted save
+          const encrypted = await encrypt(proofsByMint, currentPassword);
+          localStorage.setItem("proofsByMint", JSON.stringify(encrypted));
+        } else {
+          // Plain save (original behavior)
+          localStorage.setItem("proofsByMint", JSON.stringify(proofsByMint, replacerLocal));
+        }
+      } catch (err) {
+        console.error("Failed to save proofs:", err);
+      }
+    };
+
+    saveProofs();
+  }, [proofsByMint, hydrated, securityLevel]);
+
+  const currentProofs = useMemo(() => proofsByMint[activeMint] || [], [proofsByMint, activeMint]);
+  const balance = useMemo(() => currentProofs.reduce((sum, p) => sum + (Number(p?.amount) || 0), 0), [currentProofs]);
+
+  const getProofsByAmount = useCallback((targetAmount) => {
+    if (!targetAmount || targetAmount <= 0) return [];
+    const sorted = [...currentProofs].sort((a, b) => b.amount - a.amount);
+    let sum = 0;
+    const selected = [];
+    for (const proof of sorted) {
+      if (sum >= targetAmount) break;
+      if (sum + proof.amount <= targetAmount * 3 || selected.length === 0) {
+        selected.push(proof);
+        sum += proof.amount;
+      }
+    }
+    return selected;
+  }, [currentProofs]);
+
+  const getProofsByAmountFromMint = useCallback((mintUrl, targetAmount) => {
+    const mintProofs = proofsByMint[mintUrl] || [];
+    if (!mintProofs.length) return { selected: [], remaining: targetAmount };
+    const sorted = [...mintProofs].sort((a, b) => b.amount - a.amount);
+    let remaining = targetAmount;
+    const selected = [];
+    for (const proof of sorted) {
+      if (remaining <= 0) break;
+      if (proof.amount <= remaining) {
+        selected.push(proof);
+        remaining -= proof.amount;
+      }
+    }
+    return { selected, remaining };
+  }, [proofsByMint]);
+
+  const addProofsToMint = useCallback((mintUrl, newProofs, keysetId = null) => {
+    if (!mintUrl || !Array.isArray(newProofs) || newProofs.length === 0) return;
+    setProofsByMint(prev => {
+      const existing = prev[mintUrl] || [];
+      const existingSecrets = new Set(existing.map(p => p.secret));
+      const uniqueNew = newProofs
+        .map(p => {
+          const cleaned = cleanProofLocal(p);
+          if (!cleaned) return null;
+          if (!cleaned.id && keysetId) cleaned.id = keysetId;
+          return cleaned;
+        })
+        .filter(Boolean)
+        .filter(p => !existingSecrets.has(p.secret));
+
+      if (uniqueNew.length === 0) return prev;
+
+      const newList = [...existing, ...uniqueNew];
+      console.log(`[HOOK ADD] Added ${uniqueNew.length} proofs to ${mintUrl} → total: ${newList.length}`);
+      return { ...prev, [mintUrl]: newList };
+    });
+  }, []);
+
+  const removeProofsFromMint = useCallback((mintUrl, proofsToRemove) => {
+    if (!mintUrl || !proofsToRemove?.length) return;
+    const secretsToRemove = new Set(proofsToRemove.map(p => p.secret).filter(Boolean));
+    setProofsByMint(prev => {
+      const mintProofs = prev[mintUrl] || [];
+      const newList = mintProofs.filter(p => !secretsToRemove.has(p.secret));
+      return { ...prev, [mintUrl]: newList };
+    });
+  }, []);
+
+  const addProofs = useCallback((newProofs, keysetId = null) => {
+    if (!activeMint) return;
+    addProofsToMint(activeMint, newProofs, keysetId);
+  }, [activeMint, addProofsToMint]);
+
+  const removeProofs = useCallback((proofsToRemove) => {
+    removeProofsFromMint(activeMint, proofsToRemove);
+  }, [activeMint, removeProofsFromMint]);
+
+  const switchMint = useCallback((newUrl) => {
+    if (newUrl && typeof newUrl === "string") setActiveMint(newUrl.trim());
+  }, []);
+
+  const resetMint = useCallback((mintUrl) => {
+    setProofsByMint(prev => {
+      const newState = { ...prev };
+      delete newState[mintUrl];
+      return newState;
+    });
+  }, []);
+
+  return {
+    activeMint,
+    switchMint,
+    currentProofs,
+    balance,
+    hydrated,
+    getProofsByAmount,
+    getProofsByAmountFromMint,
+    addProofs,
+    removeProofs,
+    proofsByMint,
+    addProofsToMint,
+    removeProofsFromMint,
+    resetMint,
+    securityLevel,
+    setSecurityLevel,
+    setCurrentPassword,
+    clearCurrentPassword, // ← new export (useful for downgrade / logout)
+  };
+}*/
+
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { replacer, reviver, cleanProof } from "@/lib/cashu";
 

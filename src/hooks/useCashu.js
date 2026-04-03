@@ -143,28 +143,96 @@ export default function useCashu() {
   };
 
   const handleMelt = async (invoiceInput) => {
-    if (!wallet) return setDataOutput({ error: "No wallet connected" });
-    const invoice = invoiceInput?.trim();
-    if (!invoice) return setDataOutput({ error: "Please enter a Bolt11 invoice" });
-    setIsProcessing(true);
+  if (!wallet) {
+    return setDataOutput({ error: "No wallet connected" });
+  }
+
+  // Auto-reload if keys are missing
+  if (!wallet.keys?.id && !wallet.keysetId) {
     try {
-      const quote = await wallet.createMeltQuoteBolt11(invoice);
-      const totalNeeded = quote.amount + quote.fee_reserve;
-      const proofsToSpend = getProofsByAmount(totalNeeded);
-      if (proofsToSpend.reduce((sum, p) => sum + p.amount, 0) < totalNeeded) {
-        return setDataOutput({ error: "Insufficient balance" });
-      }
-      const meltResult = await wallet.meltProofsBolt11(quote, proofsToSpend);
-      const isPaid = meltResult.paid === true || meltResult.quote?.paid === true;
-      if (!isPaid) throw new Error("Mint could not pay the invoice");
-      removeProofs(proofsToSpend);
-      setDataOutput({ status: "Success ✓", success: `Paid ${quote.amount} sats` });
-    } catch (err) {
-      setDataOutput({ error: "Melt failed", details: err.message });
-    } finally {
-      setIsProcessing(false);
+      await wallet.loadMint();
+    } catch (e) {
+      return setDataOutput({ error: "Wallet connection lost", details: "Click 'Set Mint' again" });
     }
-  };
+  }
+
+  const invoice = invoiceInput?.trim();
+  if (!invoice) {
+    return setDataOutput({ error: "Please enter a Bolt11 invoice" });
+  }
+
+  setIsProcessing(true);
+  try {
+    const quote = await wallet.createMeltQuoteBolt11(invoice);
+    const totalNeeded = quote.amount + quote.fee_reserve;
+
+    // ←←← PREVIOUS LOGIC YOU LIKED (this always gives enough proofs)
+    const proofsToSpend = getProofsByAmount(totalNeeded);
+    const selectedTotal = proofsToSpend.reduce((sum, p) => sum + (p.amount || 0), 0);
+
+    if (selectedTotal < totalNeeded) {
+      return setDataOutput({ 
+        error: "Insufficient balance", 
+        details: `Needed ${totalNeeded} sat, only ${selectedTotal} sat available` 
+      });
+    }
+
+    const meltResult = await wallet.meltProofsBolt11(quote, proofsToSpend);
+
+    let effective = meltResult;
+    if (meltResult.error && meltResult.details?.quote) {
+      effective = meltResult.details;
+    }
+
+    const isPaid = effective.paid === true || 
+                   effective.quote?.paid === true || 
+                   effective.state === "PAID";
+
+    if (!isPaid) {
+      throw new Error("Mint could not pay the invoice");
+    }
+
+    // Remove spent proofs
+    removeProofs(proofsToSpend);
+
+    // Handle change proofs — with keyset repair (exactly your style)
+    let changeAmount = 0;
+    const changeArray = effective.change || effective.quote?.change || [];
+
+    if (Array.isArray(changeArray) && changeArray.length > 0) {
+      const currentKeysetId = wallet.keys?.id || wallet.keysetId;
+
+      const readyChange = changeArray.map(p => ({
+        secret: p.secret,
+        C: p.C || p.C_,
+        amount: Number(p.amount),
+        id: p.id || currentKeysetId,
+      }));
+
+      addProofsToMint(activeMint, readyChange, currentKeysetId);
+      changeAmount = readyChange.reduce((sum, p) => sum + p.amount, 0);
+      console.log(`[MELT] Added ${changeAmount} sat change with keyset ${currentKeysetId}`);
+    }
+
+    const netSent = quote.amount;
+
+    setDataOutput({ 
+      status: "Success ✓", 
+      success: `Paid ${netSent} sats successfully!`,
+      preimage: effective.payment_preimage || effective.quote?.payment_preimage || "N/A",
+      amountPaid: netSent,
+      feeReserve: quote.fee_reserve,
+      changeReceived: changeAmount,
+      estimatedNewBalance: balance - netSent - quote.fee_reserve + changeAmount,
+    });
+
+  } catch (err) {
+    console.error("[MELT ERROR]", err);
+    setDataOutput({ error: "Melt failed", details: err.message || String(err) });
+  } finally {
+    setIsProcessing(false);
+  }
+};
 
 // === SWAP SEND (SAFE & SIMPLE) ===
   const handleSwapSend = async (amountInput) => {
