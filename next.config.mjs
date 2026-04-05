@@ -3,7 +3,7 @@ const nextConfig = {
   /* config options here */
   reactCompiler: false,
   reactStrictMode: true,
-  transpilePackages: ["@cashu/cashu-ts", "nostr-tools"],
+  /*transpilePackages: ["@cashu/cashu-ts", "nostr-tools"],*/
 };
 
 export default nextConfig;
