@@ -2,14 +2,15 @@
   "name": "cashu-cocoa-cash",
   "version": "0.1.0",
   "private": true,
-"scripts": {
-  "dev": "next dev",
-  "build": "next build",
-  "start": "next start",
-  "lint": "eslint"
-},
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
   "dependencies": {
     "@cashu/cashu-ts": "3.6.0",
+    "bip39": "^3.1.0",
     "next": "16.1.3",
     "nostr-tools": "^2.23.3",
     "qrcode.react": "^4.2.0",
