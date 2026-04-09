@@ -844,6 +844,9 @@ export default function useProofStorage() {
 }*/
 
 // src/hooks/useProofStorage.js
+// MIT License
+// Copyright (c) 2026 Jose2097
+
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { replacer, reviver } from "@/lib/cashu";
 import * as bip39 from "bip39";

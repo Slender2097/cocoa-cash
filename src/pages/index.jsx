@@ -296,6 +296,9 @@ export default function Home() {
 }*/
 
 // src/pages/index.jsx
+// MIT License
+// Copyright (c) 2026 Jose2097
+
 import React, { useState } from "react";
 import useCashu from "@/hooks/useCashu";
 import useProofStorage from "@/hooks/useProofStorage";
@@ -518,7 +521,7 @@ export default function Home() {
                   onClick={() => {
                     const success = restoreFromSeed(tempSeed);
                     if (success) {
-                      alert("✅ Wallet restored successfully!");
+                      alert(" Wallet restored successfully!");
                       setShowSeedReveal(false);
                       setRestoreMode(false);
                       setTempSeed("");
@@ -532,7 +535,7 @@ export default function Home() {
                 <button
                   onClick={() => {
                     navigator.clipboard.writeText(mnemonic);
-                    alert("✅ Copied to clipboard");
+                    alert(" Copied to clipboard");
                   }}
                   className="flex-1 py-4 rounded-3xl bg-[#4ff4c6] text-[#0f1c18] font-medium"
                 >
