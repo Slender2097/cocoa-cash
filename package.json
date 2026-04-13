@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@cashu/cashu-ts": "3.6.0",
+    "@vercel/analytics": "^2.0.1",
     "bip39": "^3.1.0",
     "html5-qrcode": "^2.3.8",
     "next": "16.1.3",
