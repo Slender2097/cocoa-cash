@@ -76,7 +76,7 @@ export default function useCashu() {
       localStorage.setItem("activeMint", url);
       switchMint(url);
 
-      setDataOutput({ status: "Mint connected ✓", keysId: satKeyset.id, info });
+      setDataOutput({ status: "Mint connected ", keysId: satKeyset.id, info });
     } catch (error) {
       setWalletReady(false);
       setDataOutput({ error: "Connection failed", details: error.message });
