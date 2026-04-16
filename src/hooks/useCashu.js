@@ -39,7 +39,9 @@ export default function useCashu() {
     }
   }, []);
 
-  useEffect(() => {
+
+
+useEffect(() => {
     if (!wallet || !wallet.keys?.id || !hydrated || pendingMints.length === 0) return;
     pendingMints.forEach((pending) => {
       if (pending.mintUrl !== activeMint) return;
@@ -82,6 +84,8 @@ export default function useCashu() {
       setDataOutput({ error: "Connection failed", details: error.message });
     }
   };
+
+    
 
   const handleMint = async (amountInput) => {
     const amount = parseInt(amountInput, 10);

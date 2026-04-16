@@ -414,7 +414,7 @@ export default function Home() {
             </button>
           </div>
 
-                    {/* 2. Melt Tokens — with Camera Scanner */}
+{/* 2. Melt Tokens — with Camera Scanner (mobile friendly) */}
           <div className="glass neon-glow rounded-3xl p-6">
             <h2 className="text-[#4ff4c6] text-xl font-medium mb-4">Melt Tokens</h2>
             
@@ -427,18 +427,17 @@ export default function Home() {
                 value={formData.meltInvoice}
                 onChange={handleChange}
                 placeholder="lnbc1..."
-                className="flex-1 bg-[#14251f] border border-[#4ff4c6]/30 rounded-3xl px-6 py-4 text-[#e8fff7] outline-none"
+                className="flex-1 bg-[#14251f] border border-[#4ff4c6]/30 rounded-3xl px-4 py-4 text-[#e8fff7] outline-none text-sm"
               />
               
-              {/* Scan QR Button */}
               <button
                 onClick={() => {
                   setScannerTarget("melt");
                   setShowScanner(true);
                 }}
-                className="px-6 py-4 bg-[#14251f] border border-[#4ff4c6]/40 hover:border-[#4ff4c6] rounded-3xl text-[#4ff4c6] font-medium transition-colors flex items-center gap-2"
+                className="px-5 py-4 bg-[#14251f] border border-[#4ff4c6]/40 hover:border-[#4ff4c6] rounded-3xl text-[#4ff4c6] font-medium transition-colors flex items-center gap-2 whitespace-nowrap"
               >
-                 Scan
+                Scan
               </button>
             </div>
 
@@ -482,7 +481,7 @@ export default function Home() {
             </button>
           </div>
 
-          {/* 4. Swap → Claim — with camera scan */}
+{/* 4. Swap → Claim — with camera scan (mobile friendly) */}
           <div className="glass neon-glow rounded-3xl p-6">
             <h2 className="text-[#4ff4c6] text-xl font-medium mb-4">Swap → Claim</h2>
             <label className="text-sm text-[#e8fff7]/70 block mb-2">Cashu Token</label>
@@ -494,7 +493,7 @@ export default function Home() {
                 value={formData.swapToken}
                 onChange={handleChange}
                 placeholder="cashuB..."
-                className="flex-1 bg-[#14251f] border border-[#4ff4c6]/30 rounded-3xl px-6 py-4 text-[#e8fff7] outline-none"
+                className="flex-1 bg-[#14251f] border border-[#4ff4c6]/30 rounded-3xl px-4 py-4 text-[#e8fff7] outline-none text-sm"
               />
               
               <button
@@ -502,9 +501,9 @@ export default function Home() {
                   setScannerTarget("swapClaim");
                   setShowScanner(true);
                 }}
-                className="px-6 py-4 bg-[#14251f] border border-[#4ff4c6]/40 hover:border-[#4ff4c6] rounded-3xl text-[#4ff4c6] font-medium transition-colors flex items-center gap-2"
+                className="px-5 py-4 bg-[#14251f] border border-[#4ff4c6]/40 hover:border-[#4ff4c6] rounded-3xl text-[#4ff4c6] font-medium transition-colors flex items-center gap-2 whitespace-nowrap"
               >
-                 Scan
+                Scan
               </button>
             </div>
 
