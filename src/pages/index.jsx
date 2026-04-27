@@ -13,6 +13,7 @@ import Footer from "@/components/layout/Footer";
 import { QRCodeSVG } from "qrcode.react";
 
 import SecurityConfig from "@/components/layout/SecurityConfig";
+import WalletWelcomeModal from "@/components/layout/WalletWelcomeModal";
 
 export default function Home() {
   const {
@@ -43,8 +44,21 @@ export default function Home() {
   const [tempSeed, setTempSeed] = useState("");
   const [restoreMode, setRestoreMode] = useState(false);
   const [actionPanel, setActionPanel] = useState(null);
-    const [showScanner, setShowScanner] = useState(false);
-    const [scannerTarget, setScannerTarget] = useState(null);
+  const [showScanner, setShowScanner] = useState(false);
+  const [scannerTarget, setScannerTarget] = useState(null);
+
+// Initialize as false to prevent hydration mismatch with Next.js SSR
+const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+
+// Check localStorage only on the client after mount
+useEffect(() => {
+  if (typeof window === "undefined") return;   // skip on server
+
+  const hasAccepted = localStorage.getItem('cocoa-welcome-accepted');
+  if (hasAccepted !== 'true') {
+    setShowWelcomeModal(true);
+  }
+}, []);
 
   const [formData, setFormData] = useState({
     mintUrl: "",
@@ -640,6 +654,13 @@ export default function Home() {
           </div>
         </div>
       )}
+
+{/* === MANDATORY WELCOME MODAL (no more flash) === */}
+      <WalletWelcomeModal
+        isOpen={showWelcomeModal}
+        onAccept={() => setShowWelcomeModal(false)}
+      />
+
     </>
   );
 }
