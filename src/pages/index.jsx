@@ -3,7 +3,7 @@
 // MIT License
 // Copyright (c) 2026 Jose2097
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import useCashu from "@/hooks/useCashu";
 import useProofStorage from "@/hooks/useProofStorage";
 
@@ -49,6 +49,9 @@ export default function Home() {
 
 // Initialize as false to prevent hydration mismatch with Next.js SSR
 const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+
+  // Ref for click-outside on Security panel
+  const securityRef = useRef(null);
 
 // Check localStorage only on the client after mount
 useEffect(() => {
@@ -187,6 +190,23 @@ useEffect(() => {
 
     return () => scanner.clear();
   }, [showScanner, scannerTarget]);
+
+    // === CLICK OUTSIDE TO CLOSE SECURITY PANEL ===
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showSecurity && securityRef.current && !securityRef.current.contains(event.target)) {
+        setShowSecurity(false);
+      }
+    };
+
+    if (showSecurity) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showSecurity]);
 
   return (
     <>
@@ -539,21 +559,23 @@ useEffect(() => {
       <Footer onOpenSecurity={() => setShowSecurity(!showSecurity)} />
 
       {showSecurity && (
-        <SecurityConfig
-          currentLevel={securityLevel}
-          onUpgrade={(action) => {
-            setShowSecurity(false);
-            if (action === "restore") {
-              setRestoreMode(true);
-              setShowSeedReveal(true);
-            } else if (action === 2) {
-              setRestoreMode(false);
-              setShowSeedReveal(true);
-            } else if (action === 1) {
-              setSecurityLevel(1);
-            }
-          }}
-        />
+        <div ref={securityRef}>
+          <SecurityConfig
+            currentLevel={securityLevel}
+            onUpgrade={(action) => {
+              setShowSecurity(false);
+              if (action === "restore") {
+                setRestoreMode(true);
+                setShowSeedReveal(true);
+              } else if (action === 2) {
+                setRestoreMode(false);
+                setShowSeedReveal(true);
+              } else if (action === 1) {
+                setSecurityLevel(1);
+              }
+            }}
+          />
+        </div>
       )}
 
       {/*Seed Modal*/} 
