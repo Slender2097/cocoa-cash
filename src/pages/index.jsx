@@ -14,6 +14,7 @@ import { QRCodeSVG } from "qrcode.react";
 
 import SecurityConfig from "@/components/layout/SecurityConfig";
 import WalletWelcomeModal from "@/components/layout/WalletWelcomeModal";
+import Image from "next/image";
 
 export default function Home() {
   const {
@@ -47,11 +48,16 @@ export default function Home() {
   const [showScanner, setShowScanner] = useState(false);
   const [scannerTarget, setScannerTarget] = useState(null);
 
+  const [showTransactionHistory, setShowTransactionHistory] = useState(false);
+  const [transactions, setTransactions] = useState([]);
+
 // Initialize as false to prevent hydration mismatch with Next.js SSR
 const [showWelcomeModal, setShowWelcomeModal] = useState(false);
 
   // Ref for click-outside on Security panel
   const securityRef = useRef(null);
+
+  const lastProcessedRef = useRef(null);
 
 // Check localStorage only on the client after mount
 useEffect(() => {
@@ -191,26 +197,75 @@ useEffect(() => {
     return () => scanner.clear();
   }, [showScanner, scannerTarget]);
 
-    // === CLICK OUTSIDE TO CLOSE SECURITY PANEL ===
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (showSecurity && securityRef.current && !securityRef.current.contains(event.target)) {
-        setShowSecurity(false);
-      }
-    };
 
-    if (showSecurity) {
-      document.addEventListener("mousedown", handleClickOutside);
+  useEffect(() => {
+    if (!dataOutput || !activeMint) return;
+
+    const isSuccess = 
+      dataOutput.status?.toLowerCase().includes("success") || 
+      dataOutput.success === true ||
+      dataOutput.token;
+
+    if (!isSuccess) return;
+
+    // Detect type even if actionPanel was already cleared
+    let detectedType = actionPanel?.type;
+    if (!detectedType && dataOutput.status) {
+      if (dataOutput.status.toLowerCase().includes("mint")) detectedType = "mint";
+      if (dataOutput.status.toLowerCase().includes("melt")) detectedType = "melt";
     }
 
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [showSecurity]);
+    // Prevent duplicates
+    const key = `${detectedType || "unknown"}-${dataOutput.status || dataOutput.token || ""}`;
+    if (lastProcessedRef.current === key) return;
+    lastProcessedRef.current = key;
+
+    let type = "";
+    let amount = 0;
+    let sign = 1;
+
+    if (detectedType === "mint") {
+      type = "mint";
+      amount = parseInt(formData.mintAmount) || 0;
+      sign = 1;
+    } 
+    else if (detectedType === "melt") {
+      type = "melt";
+      amount = dataOutput.amount || dataOutput.paid || dataOutput.sent || 0;
+      sign = -1;
+    } 
+    else if (detectedType === "swapSend") {
+      type = "swap-send";
+      amount = parseInt(formData.swapAmount) || 0;
+      sign = -1;
+    } 
+    else if (detectedType === "swapClaim") {
+      type = "swap-claim";
+      amount = dataOutput.amount || dataOutput.received || dataOutput.value || 0;
+      sign = 1;
+    }
+
+    if (type && amount > 0) {
+      const newTx = {
+        id: Date.now(),
+        type: type,
+        amount: amount * sign,
+        mint: activeMint,
+        timestamp: new Date().toLocaleString(),
+      };
+
+      setTransactions(prev => [newTx, ...prev]);
+    }
+  }, [dataOutput, activeMint, actionPanel, formData]);
 
   return (
     <>
-      <Navbar activeMint={activeMint} onSwitchMint={handleSelectMint} />
+      <Navbar 
+        activeMint={activeMint} 
+        onSwitchMint={handleSelectMint}
+        onShowTransactionHistory={() => setShowTransactionHistory(true)}
+      />
+
 
       <div className="max-w-4xl mx-auto px-6 pt-6 pb-12">
          <BalanceDisplay 
@@ -682,6 +737,59 @@ useEffect(() => {
         isOpen={showWelcomeModal}
         onAccept={() => setShowWelcomeModal(false)}
       />
+
+      {/* === TRANSACTION HISTORY MODAL === */}
+      {showTransactionHistory && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-xl">
+          <div className="bg-[#1e3a32] border border-[#4ff4c6]/40 rounded-3xl p-8 max-w-2xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+            
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <Image src="/clock.png" alt="History" width={40} height={40} className="object-contain" />
+                <h2 className="text-2xl font-medium text-[#e8fff7]">Transaction History</h2>
+              </div>
+              <button
+                onClick={() => setShowTransactionHistory(false)}
+                className="text-4xl text-[#4ff4c6] hover:text-red-400 leading-none"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+              {transactions.length === 0 ? (
+                <div className="text-center py-16 text-[#e8fff7]/40">
+                  <p className="text-7xl mb-6">🕒</p>
+                  <p className="text-xl">No transactions yet</p>
+                </div>
+              ) : (
+                transactions.map((tx) => (
+                  <div key={tx.id} className="bg-[#14251f] p-4 rounded-2xl flex justify-between items-center">
+                    <div>
+                      <p className="text-[#e8fff7] capitalize">{tx.type}</p>
+                      <p className="text-xs text-[#e8fff7]/60">{tx.timestamp}</p>
+                      <p className="text-xs text-[#4ff4c6]/80 mt-1">
+                        {tx.mint ? tx.mint.replace("https://", "").replace(/\/$/, "") : ""}
+                      </p>
+                    </div>
+                    <p className={`font-medium text-lg ${tx.amount > 0 ? "text-[#4ff4c6]" : "text-red-400"}`}>
+                      {tx.amount > 0 ? "+" : ""}{tx.amount} sat
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <button
+              onClick={() => setShowTransactionHistory(false)}
+              className="mt-6 w-full py-4 bg-[#14251f] border border-[#4ff4c6]/40 hover:border-[#4ff4c6] rounded-3xl text-[#e8fff7]"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
 
     </>
   );

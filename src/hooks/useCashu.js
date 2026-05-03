@@ -39,8 +39,6 @@ export default function useCashu() {
     }
   }, []);
 
-
-
 useEffect(() => {
     if (!wallet || !wallet.keys?.id || !hydrated || pendingMints.length === 0) return;
     pendingMints.forEach((pending) => {
@@ -224,7 +222,7 @@ useEffect(() => {
       status: "Success ✓", 
       success: `Paid ${netSent} sats successfully!`,
       preimage: effective.payment_preimage || effective.quote?.payment_preimage || "N/A",
-      amountPaid: netSent,
+      amount: netSent,
       feeReserve: quote.fee_reserve,
       changeReceived: changeAmount,
       estimatedNewBalance: balance - netSent - quote.fee_reserve + changeAmount,
@@ -272,7 +270,7 @@ useEffect(() => {
       setDataOutput({
         status: " V4 Token created successfully",
         token: tokenString,
-        sentAmount: amount,
+        amount: amount,
         message: "Copy this token and send it to the receiver",
       });
 
@@ -323,7 +321,7 @@ useEffect(() => {
 
       setDataOutput({
         status: " Claim successful",
-        receivedAmount,
+        amount: receivedAmount,
         receivedCount: receivedProofs.length,
         message: `Added ${receivedAmount} sat to your balance`,
       });
