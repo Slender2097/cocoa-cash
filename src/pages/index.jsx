@@ -166,6 +166,23 @@ useEffect(() => {
     });
   }, [dataOutput]);
 
+    // === CLICK OUTSIDE TO CLOSE SECURITY PANEL ===
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showSecurity && securityRef.current && !securityRef.current.contains(event.target)) {
+        setShowSecurity(false);
+      }
+    };
+
+    if (showSecurity) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showSecurity]);
+
     // === QR Scanner (now correctly fills Melt OR Swap Claim) ===
   useEffect(() => {
     if (!showScanner) return;
@@ -197,7 +214,7 @@ useEffect(() => {
     return () => scanner.clear();
   }, [showScanner, scannerTarget]);
 
-
+ //transacttion History
   useEffect(() => {
     if (!dataOutput || !activeMint) return;
 
@@ -257,6 +274,26 @@ useEffect(() => {
       setTransactions(prev => [newTx, ...prev]);
     }
   }, [dataOutput, activeMint, actionPanel, formData]);
+
+    // === LOAD TRANSACTION HISTORY FROM LOCALSTORAGE ===
+  useEffect(() => {
+    const saved = localStorage.getItem("transaction_history");
+    if (saved) {
+      try {
+        setTransactions(JSON.parse(saved));
+      } catch (e) {
+        console.error("Failed to load transaction history");
+      }
+    }
+  }, []);
+
+  // === SAVE TRANSACTION HISTORY TO LOCALSTORAGE ===
+  useEffect(() => {
+    if (transactions.length > 0) {
+      localStorage.setItem("transaction_history", JSON.stringify(transactions));
+    }
+  }, [transactions]);
+
 
   return (
     <>
