@@ -183,7 +183,7 @@ useEffect(() => {
   }, [showSecurity]);
 
     // === QR Scanner (now correctly fills Melt OR Swap Claim) ===
-  /*useEffect(() => {
+  useEffect(() => {
     if (!showScanner) return;
 
     const { Html5QrcodeScanner } = require("html5-qrcode");
@@ -208,54 +208,6 @@ useEffect(() => {
         setScannerTarget(null);   // reset for next time
       },
       (error) => console.warn(error)
-    );
-
-    return () => scanner.clear();
-  }, [showScanner, scannerTarget]);*/
-
-    // === IMPROVED QR SCANNER (better for Lightning + Cashu) ===
-  useEffect(() => {
-    if (!showScanner) return;
-
-    const { Html5QrcodeScanner } = require("html5-qrcode");
-
-    const scanner = new Html5QrcodeScanner(
-      "qr-reader",
-      { 
-        fps: 15,                    // faster scanning
-        qrbox: { width: 320, height: 320 },   // bigger scanning area
-        aspectRatio: 1.0
-      },
-      false
-    );
-
-    scanner.render(
-      (decodedText) => {
-        // Clean the scanned text
-        let cleanText = decodedText.trim();
-
-        // Remove "lightning:" prefix if the user scanned a Lightning invoice
-        if (cleanText.toLowerCase().startsWith("lightning:")) {
-          cleanText = cleanText.substring(10);
-        }
-
-        if (scannerTarget === "swapClaim") {
-          setFormData((prev) => ({ ...prev, swapToken: cleanText }));
-          alert("Cashu token scanned successfully!");
-        } else {
-          setFormData((prev) => ({ ...prev, meltInvoice: cleanText }));
-          alert("Lightning invoice scanned successfully!");
-        }
-
-        setShowScanner(false);
-        setScannerTarget(null);
-      },
-      (error) => {
-        // Silence the annoying "No QR found" messages
-        if (error !== "NotFoundException") {
-          console.warn(error);
-        }
-      }
     );
 
     return () => scanner.clear();
