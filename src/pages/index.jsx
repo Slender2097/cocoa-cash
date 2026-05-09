@@ -211,7 +211,60 @@ useEffect(() => {
     );
 
     return () => scanner.clear();
-  }, [showScanner, scannerTarget]);
+  }, [showScanner, scannerTarget]);*/
+
+    // === STRONG & RELIABLE QR SCANNER (optimized for Lightning + V4 tokens) ===
+  useEffect(() => {
+    if (!showScanner) return;
+
+    const { Html5QrcodeScanner } = require("html5-qrcode");
+
+    const scanner = new Html5QrcodeScanner(
+      "qr-reader",
+      {
+        fps: 25,
+        qrbox: { width: 400, height: 400 },        // Large scanning area
+        aspectRatio: 1.0,
+        videoConstraints: {
+          facingMode: "environment",               // Use back camera
+          /*width: { ideal: 720 },
+          height: { ideal: 720 }*/
+        },
+        rememberLastUsedCamera: true
+      },
+      false
+    );
+
+    scanner.render(
+      (decodedText) => {
+        let cleanText = decodedText.trim();
+
+        // Remove lightning: prefix if present
+        if (cleanText.toLowerCase().startsWith("lightning:")) {
+          cleanText = cleanText.substring(10);
+        }
+
+        if (scannerTarget === "swapClaim") {
+          setFormData((prev) => ({ ...prev, swapToken: cleanText }));
+          alert("Cashu token scanned successfully!");
+        } else {
+          setFormData((prev) => ({ ...prev, meltInvoice: cleanText }));
+          alert("Lightning invoice scanned successfully!");
+        }
+
+        setShowScanner(false);
+        setScannerTarget(null);
+      },
+      (error) => {
+        // Hide common "no QR found" spam
+        if (error !== "NotFoundException") {
+          console.warn(error);
+        }
+      }
+    );
+
+    return () => scanner.clear();
+  }, [showScanner, scannerTarget]);;
 
  //transacttion History
   useEffect(() => {
@@ -272,60 +325,7 @@ useEffect(() => {
 
       setTransactions(prev => [newTx, ...prev]);
     }
-  }, [dataOutput, activeMint, actionPanel, formData]);*/
-
-  // === STRONG & RELIABLE QR SCANNER (optimized for Lightning + V4 tokens) ===
-  useEffect(() => {
-    if (!showScanner) return;
-
-    const { Html5QrcodeScanner } = require("html5-qrcode");
-
-    const scanner = new Html5QrcodeScanner(
-      "qr-reader",
-      {
-        fps: 25,
-        qrbox: { width: 400, height: 400 },        // Large scanning area
-        aspectRatio: 1.0,
-        videoConstraints: {
-          facingMode: "environment",               // Use back camera
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        },
-        rememberLastUsedCamera: true
-      },
-      false
-    );
-
-    scanner.render(
-      (decodedText) => {
-        let cleanText = decodedText.trim();
-
-        // Remove lightning: prefix if present
-        if (cleanText.toLowerCase().startsWith("lightning:")) {
-          cleanText = cleanText.substring(10);
-        }
-
-        if (scannerTarget === "swapClaim") {
-          setFormData((prev) => ({ ...prev, swapToken: cleanText }));
-          alert("Cashu token scanned successfully!");
-        } else {
-          setFormData((prev) => ({ ...prev, meltInvoice: cleanText }));
-          alert("Lightning invoice scanned successfully!");
-        }
-
-        setShowScanner(false);
-        setScannerTarget(null);
-      },
-      (error) => {
-        // Hide common "no QR found" spam
-        if (error !== "NotFoundException") {
-          console.warn(error);
-        }
-      }
-    );
-
-    return () => scanner.clear();
-  }, [showScanner, scannerTarget]);;
+  }, [dataOutput, activeMint, actionPanel, formData]);
 
     // === LOAD TRANSACTION HISTORY FROM LOCALSTORAGE ===
   useEffect(() => {
