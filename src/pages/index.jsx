@@ -183,7 +183,7 @@ useEffect(() => {
   }, [showSecurity]);
 
     // === QR Scanner (now correctly fills Melt OR Swap Claim) ===
-  useEffect(() => {
+  /*useEffect(() => {
     if (!showScanner) return;
 
     const { Html5QrcodeScanner } = require("html5-qrcode");
@@ -272,7 +272,60 @@ useEffect(() => {
 
       setTransactions(prev => [newTx, ...prev]);
     }
-  }, [dataOutput, activeMint, actionPanel, formData]);
+  }, [dataOutput, activeMint, actionPanel, formData]);*/
+
+  // === STRONG & RELIABLE QR SCANNER (optimized for Lightning + V4 tokens) ===
+  useEffect(() => {
+    if (!showScanner) return;
+
+    const { Html5QrcodeScanner } = require("html5-qrcode");
+
+    const scanner = new Html5QrcodeScanner(
+      "qr-reader",
+      {
+        fps: 25,
+        qrbox: { width: 400, height: 400 },        // Large scanning area
+        aspectRatio: 1.0,
+        videoConstraints: {
+          facingMode: "environment",               // Use back camera
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        rememberLastUsedCamera: true
+      },
+      false
+    );
+
+    scanner.render(
+      (decodedText) => {
+        let cleanText = decodedText.trim();
+
+        // Remove lightning: prefix if present
+        if (cleanText.toLowerCase().startsWith("lightning:")) {
+          cleanText = cleanText.substring(10);
+        }
+
+        if (scannerTarget === "swapClaim") {
+          setFormData((prev) => ({ ...prev, swapToken: cleanText }));
+          alert("Cashu token scanned successfully!");
+        } else {
+          setFormData((prev) => ({ ...prev, meltInvoice: cleanText }));
+          alert("Lightning invoice scanned successfully!");
+        }
+
+        setShowScanner(false);
+        setScannerTarget(null);
+      },
+      (error) => {
+        // Hide common "no QR found" spam
+        if (error !== "NotFoundException") {
+          console.warn(error);
+        }
+      }
+    );
+
+    return () => scanner.clear();
+  }, [showScanner, scannerTarget]);;
 
     // === LOAD TRANSACTION HISTORY FROM LOCALSTORAGE ===
   useEffect(() => {
@@ -383,13 +436,13 @@ useEffect(() => {
                 {actionPanel.status === "waiting" && actionPanel.invoice && (
                   <div className="mt-8 flex justify-center">
                     <div className="bg-[#0a1a14] p-5 rounded-3xl border border-[#4ff4c6]/40 shadow-inner">
-                      <QRCodeSVG
-                        value={`lightning:${actionPanel.invoice}`}
-                          size={300}
-                          bgColor="#0a1a14"
-                          fgColor="#4ff4c6"
-                          level="H"
-                          includeMargin={true}
+                    <QRCodeSVG
+                      value={`lightning:${actionPanel.invoice}`}
+                      size={320}
+                      bgColor="#ffffff"
+                      fgColor="#000000"
+                      level="L"
+                      includeMargin={true}
                       />
                     </div>
                   </div>
@@ -453,14 +506,14 @@ useEffect(() => {
                 {actionPanel.status === "waiting" && actionPanel.token && (
                   <div className="mt-8 flex justify-center">
                     <div className="bg-[#0a1a14] p-5 rounded-3xl border border-[#4ff4c6]/40 shadow-inner">
-                      <QRCodeSVG
-                        value={actionPanel.token}
-                        size={280}
-                        bgColor="#0a1a14"
-                        fgColor="#4ff4c6"
-                        level="H"
-                        includeMargin={true}
-                      />
+                    <QRCodeSVG
+                      value={actionPanel.token}
+                      size={320}
+                      bgColor="#ffffff"
+                      fgColor="#000000"
+                      level="L"
+                      includeMargin={true}
+                    />
                     </div>
                   </div>
                 )}
