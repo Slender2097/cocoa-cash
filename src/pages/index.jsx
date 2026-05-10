@@ -48,7 +48,12 @@ export default function Home() {
   const [scannerTarget, setScannerTarget] = useState(null);
 
   const [showTransactionHistory, setShowTransactionHistory] = useState(false);
-  const [transactions, setTransactions] = useState([]);
+  
+  const [transactions, setTransactions] = useState(() => {
+    if (typeof window === "undefined") return [];   // ← Important for Next.js SSR
+    const saved = localStorage.getItem("transaction_history");
+    return saved ? JSON.parse(saved) : [];
+  });
 
 // Initialize as false to prevent hydration mismatch with Next.js SSR
 const [showWelcomeModal, setShowWelcomeModal] = useState(false);
@@ -264,9 +269,9 @@ useEffect(() => {
     return () => scanner.clear();
   }, [showScanner, scannerTarget]);;
 
-  // === ROBUST TRANSACTION HISTORY RECORDER (catches ALL operations) ===
+    // === FINAL ROBUST TRANSACTION RECORDER ===
 
-useEffect(() => {
+  useEffect(() => {
     if (!dataOutput || !activeMint) return;
 
     const isSuccess = 
@@ -276,15 +281,20 @@ useEffect(() => {
 
     if (!isSuccess) return;
 
-    // Strong type detection
-    let type = actionPanel?.type;
+    // Get type from hook first (most reliable)
+    let type = dataOutput.type;
+
+    // Fallback if hook doesn't send type
+    if (!type && actionPanel?.type) {
+      type = actionPanel.type;
+    }
 
     if (!type && dataOutput.status) {
-      const status = dataOutput.status.toLowerCase();
-      if (status.includes("mint")) type = "mint";
-      else if (status.includes("melt")) type = "melt";
-      else if (status.includes("token") || status.includes("send")) type = "swap-send";
-      else if (status.includes("claim")) type = "swap-claim";
+      const s = dataOutput.status.toLowerCase();
+      if (s.includes("mint")) type = "mint";
+      else if (s.includes("melt") || s.includes("success")) type = "melt";
+      else if (s.includes("token") || s.includes("send")) type = "swap-send";
+      else if (s.includes("claim")) type = "swap-claim";
     }
 
     // Prevent duplicates
@@ -292,23 +302,23 @@ useEffect(() => {
     if (lastProcessedRef.current === key) return;
     lastProcessedRef.current = key;
 
-    let amount = 0;
+    let amount = dataOutput.amount || 0;
     let sign = 1;
 
     if (type === "mint") {
-      amount = parseInt(formData.mintAmount) || 0;
+      amount = dataOutput.amount || parseInt(formData.mintAmount) || 0;
       sign = 1;
     } 
     else if (type === "melt") {
-      amount = dataOutput.amount || dataOutput.paid || dataOutput.sent || 0;
+      amount = dataOutput.amount || 0;
       sign = -1;
     } 
     else if (type === "swap-send") {
-      amount = parseInt(formData.swapAmount) || 0;
+      amount = dataOutput.amount || parseInt(formData.swapAmount) || 0;
       sign = -1;
     } 
     else if (type === "swap-claim") {
-      amount = dataOutput.amount || dataOutput.received || dataOutput.value || 0;
+      amount = dataOutput.amount || 0;
       sign = 1;
     }
 

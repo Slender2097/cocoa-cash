@@ -125,7 +125,7 @@ useEffect(() => {
               localStorage.setItem("pendingMints", JSON.stringify(remaining, replacer));
               return remaining;
             });
-            setDataOutput({ status: "Mint successful ✓", receivedProofs: proofs.length });
+            setDataOutput({ status: "Mint successful ✓", type: "mint", amount: amount, receivedProofs: proofs.length}); //here i just change -receivedProofs: proofs.length
           }
           return;
         }
@@ -220,6 +220,7 @@ useEffect(() => {
 
     setDataOutput({ 
       status: "Success ✓", 
+      type: "melt",
       success: `Paid ${netSent} sats successfully!`,
       preimage: effective.payment_preimage || effective.quote?.payment_preimage || "N/A",
       amount: netSent,
@@ -268,9 +269,10 @@ useEffect(() => {
       if (sendResult.keep?.length > 0) addProofs(sendResult.keep);
 
       setDataOutput({
-        status: " V4 Token created successfully",
-        token: tokenString,
+        status: "Token created successfully",
+        type: "swap-send",
         amount: amount,
+        token: tokenString,
         message: "Copy this token and send it to the receiver",
       });
 
@@ -321,6 +323,7 @@ useEffect(() => {
 
       setDataOutput({
         status: " Claim successful",
+        type: "swap-claim",
         amount: receivedAmount,
         receivedCount: receivedProofs.length,
         message: `Added ${receivedAmount} sat to your balance`,
