@@ -223,12 +223,10 @@ useEffect(() => {
       "qr-reader",
       {
         fps: 25,
-        qrbox: { width: 400, height: 400 },        // Large scanning area
+        qrbox: { width: 400, height: 400 },        
         aspectRatio: 1.0,
         videoConstraints: {
-          facingMode: "environment",               // Use back camera
-          /*width: { ideal: 720 },
-          height: { ideal: 720 }*/
+          facingMode: "environment",              
         },
         rememberLastUsedCamera: true
       },
@@ -266,50 +264,50 @@ useEffect(() => {
     return () => scanner.clear();
   }, [showScanner, scannerTarget]);;
 
- //transacttion History
-  useEffect(() => {
+  // === ROBUST TRANSACTION HISTORY RECORDER (catches ALL operations) ===
+
+useEffect(() => {
     if (!dataOutput || !activeMint) return;
 
     const isSuccess = 
       dataOutput.status?.toLowerCase().includes("success") || 
       dataOutput.success === true ||
-      dataOutput.token;
+      dataOutput.token !== undefined;
 
     if (!isSuccess) return;
 
-    // Detect type even if actionPanel was already cleared
-    let detectedType = actionPanel?.type;
-    if (!detectedType && dataOutput.status) {
-      if (dataOutput.status.toLowerCase().includes("mint")) detectedType = "mint";
-      if (dataOutput.status.toLowerCase().includes("melt")) detectedType = "melt";
+    // Strong type detection
+    let type = actionPanel?.type;
+
+    if (!type && dataOutput.status) {
+      const status = dataOutput.status.toLowerCase();
+      if (status.includes("mint")) type = "mint";
+      else if (status.includes("melt")) type = "melt";
+      else if (status.includes("token") || status.includes("send")) type = "swap-send";
+      else if (status.includes("claim")) type = "swap-claim";
     }
 
     // Prevent duplicates
-    const key = `${detectedType || "unknown"}-${dataOutput.status || dataOutput.token || ""}`;
+    const key = `${type || "unknown"}-${dataOutput.status || dataOutput.token || ""}`;
     if (lastProcessedRef.current === key) return;
     lastProcessedRef.current = key;
 
-    let type = "";
     let amount = 0;
     let sign = 1;
 
-    if (detectedType === "mint") {
-      type = "mint";
+    if (type === "mint") {
       amount = parseInt(formData.mintAmount) || 0;
       sign = 1;
     } 
-    else if (detectedType === "melt") {
-      type = "melt";
+    else if (type === "melt") {
       amount = dataOutput.amount || dataOutput.paid || dataOutput.sent || 0;
       sign = -1;
     } 
-    else if (detectedType === "swapSend") {
-      type = "swap-send";
+    else if (type === "swap-send") {
       amount = parseInt(formData.swapAmount) || 0;
       sign = -1;
     } 
-    else if (detectedType === "swapClaim") {
-      type = "swap-claim";
+    else if (type === "swap-claim") {
       amount = dataOutput.amount || dataOutput.received || dataOutput.value || 0;
       sign = 1;
     }

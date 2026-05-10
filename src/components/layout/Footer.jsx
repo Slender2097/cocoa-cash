@@ -10,15 +10,15 @@ export default function Footer({ onOpenSecurity }) {
 
         <div className="flex items-center justify-between">
 
-          {/* LEFT SPACER - keeps everything balanced */}
-          <div className="w-20"></div>
+          {/* LEFT SPACER - only on desktop */}
+          <div className="hidden md:block w-20"></div>
 
           {/* CENTER - Copyright + Links */}
-          <div className="text-center text-xs text-[#e8fff7]/50 leading-tight ml-20">
+          <div className="text-center text-xs text-[#e8fff7]/50 leading-tight md:ml-20">
             <p>© 2026 cocoa.cash</p>
             <p className="mt-1">All rights reserved.</p>
             
-            <div className="mt-3 flex items-center justify-center gap-3 text-[#e8fff7]/60 ml-5">
+            <div className="mt-3 flex items-center justify-center gap-3 text-[#e8fff7]/60 md:ml-5">
               <Link 
                 href="/privacy"
                 className="hover:text-[#4ff4c6] transition-colors"
