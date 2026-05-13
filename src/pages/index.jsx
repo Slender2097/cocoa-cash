@@ -144,6 +144,7 @@ useEffect(() => {
         dataOutput.status?.includes("Mint successful") ||
         dataOutput.status?.includes("Success") ||
         dataOutput.status?.includes("Token created") ||
+        dataOutput.status?.includes("Claim successful") ||
         dataOutput.success
       ) {
         const updated = {
@@ -464,10 +465,11 @@ useEffect(() => {
                 )}
 
                 {actionPanel.status === "success" && (
-                  <div className="mt-8 flex justify-center items-center gap-6 text-8xl animate-pulse">
-                    <span className="text-yellow-300">⚡</span>
-                    <span className="text-[#4ff4c6] font-medium tracking-widest">LIGHTNING PAID</span>
-                    <span className="text-yellow-300">⚡</span>
+                  <div className="mt-6 font-mono bg-[#0a1a14] border border-[#4ff4c6]/30 rounded-2xl p-5 text-[#e8fff7] text-base leading-relaxed flex items-start gap-3 shadow-inner">
+                    <span className="text-[#4ff4c6] select-none mt-px text-lg">➜</span>
+                    <span className="flex-1 font-light">
+                      Payment Received ✓
+                    </span>
                   </div>
                 )}
 
@@ -585,7 +587,7 @@ useEffect(() => {
               className="w-full bg-[#14251f] border border-[#4ff4c6]/30 rounded-3xl px-6 py-4 text-[#e8fff7] outline-none mb-6"
             />
 
-                        <button
+              <button
               onClick={async () => {
                 const amount = parseInt(formData.mintAmount);
                 if (!amount || amount < 1) return alert("Please enter a valid amount");
@@ -602,21 +604,6 @@ useEffect(() => {
             >
               Mint
             </button>
-            {/*
-            <button
-              onClick={async () => {
-                const amount = parseInt(formData.mintAmount);
-                if (!amount || amount < 1) return alert("Please enter a valid amount");
-
-                setActionPanel({ type: "mint", status: "waiting", invoice: null });
-
-                await handleMint(amount);
-              }}
-              disabled={isProcessing || !walletReady}
-              className="w-full py-4 bg-[#4ff4c6] text-[#0f1c18] font-medium rounded-3xl hover:brightness-110 disabled:opacity-50"
-            >
-              Mint
-            </button>*/}
           </div>
 
 {/* 2. Melt Tokens — with Camera Scanner (mobile friendly) */}
@@ -646,7 +633,7 @@ useEffect(() => {
               </button>
             </div>
 
-                        <button
+              <button
               onClick={async () => {
                 if (!formData.meltInvoice) return alert("Please enter a Bolt11 invoice");
                 
@@ -661,18 +648,6 @@ useEffect(() => {
             >
               Melt
             </button>
-
-            {/*<button
-              onClick={async () => {
-                if (!formData.meltInvoice) return alert("Please enter a Bolt11 invoice");
-                setActionPanel({ type: "melt", status: "waiting", message: "Processing melt..." });
-                await handleMelt(formData.meltInvoice);
-              }}
-              disabled={isProcessing || !walletReady}
-              className="mt-6 w-full py-4 bg-[#4ff4c6] text-[#0f1c18] font-medium rounded-3xl hover:brightness-110 disabled:opacity-50"
-            >
-              Melt
-            </button>*/}
           </div>
 
           {/* 3. Swap → Send — generates QR code */}
@@ -688,7 +663,7 @@ useEffect(() => {
               className="w-full bg-[#14251f] border border-[#4ff4c6]/30 rounded-3xl px-6 py-4 text-[#e8fff7] outline-none mb-6"
             />
 
-                        <button
+              <button
               onClick={async () => {
                 const amount = parseInt(formData.swapAmount);
                 if (!amount || amount < 1) return alert("Please enter a valid amount");
@@ -704,24 +679,9 @@ useEffect(() => {
             >
               Create Token (Send)
             </button>
-
-
-            {/*<button
-              onClick={async () => {
-                const amount = parseInt(formData.swapAmount);
-                if (!amount || amount < 1) return alert("Please enter a valid amount");
-
-                setActionPanel({ type: "swapSend", status: "waiting", token: null });
-                await handleSwapSend(amount);
-              }}
-              disabled={isProcessing || !walletReady}
-              className="w-full py-4 bg-[#4ff4c6] text-[#0f1c18] font-medium rounded-3xl hover:brightness-110 disabled:opacity-50"
-            >
-              Create Token (Send)
-            </button>*/}
           </div>
 
-{/* 4. Swap → Claim — with camera scan (mobile friendly) */}
+          {/* 4. Swap → Claim — with camera scan (mobile friendly) */}
           <div className="glass neon-glow rounded-3xl p-6">
             <h2 className="text-[#4ff4c6] text-xl font-medium mb-4">Swap → Claim</h2>
             <label className="text-sm text-[#e8fff7]/70 block mb-2">Cashu Token</label>
@@ -764,17 +724,6 @@ useEffect(() => {
               Claim Token
             </button>
 
-           {/* <button
-              onClick={async () => {
-                if (!formData.swapToken) return alert("Please enter or scan a Cashu token");
-                setActionPanel({ type: "swapClaim", status: "waiting", message: "Claiming token..." });
-                await handleSwapClaim(formData.swapToken);
-              }}
-              disabled={isProcessing || !walletReady}
-              className="mt-6 w-full py-4 bg-[#4ff4c6] text-[#0f1c18] font-medium rounded-3xl hover:brightness-110 disabled:opacity-50"
-            >
-              Claim Token
-            </button>*/}
           </div>
         </div>
       </div>
