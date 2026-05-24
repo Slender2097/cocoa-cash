@@ -790,10 +790,10 @@ useEffect(() => {
 
               {restoreMode ? (
                 <button
-                  onClick={() => {
-                    const success = restoreFromSeed(tempSeed);
+                  onClick={async () => {
+                    const success = await restoreFromSeed(tempSeed);
                     if (success) {
-                      alert(" Wallet restored successfully!");
+                      alert("✅ Wallet restored successfully!");
                       setShowSeedReveal(false);
                       setRestoreMode(false);
                       setTempSeed("");
