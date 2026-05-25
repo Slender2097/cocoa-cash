@@ -1,7 +1,7 @@
-// src/pages/terms.jsx
-import React from 'react';
+// src/pages/terms.tsx
+import type { NextPage } from "next";
 
-export default function Terms() {
+const Terms: NextPage = () => {
   return (
     <div className="min-h-screen bg-[#14251f] text-[#e8fff7] py-12 px-6">
       <div className="max-w-4xl mx-auto">
@@ -104,4 +104,5 @@ export default function Terms() {
       </div>
     </div>
   );
-}
+};
+export default Terms;
