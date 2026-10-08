@@ -6,10 +6,10 @@ export default function Privacy() {
     <div className="min-h-screen bg-[#14251f] text-[#e8fff7] py-12 px-6">
       <div className="max-w-4xl mx-auto">
         <h1 className="text-4xl font-bold mb-2">Privacy Policy</h1>
-        <p className="text-[#4ff4c6] mb-10">Last Updated: April 26, 2026</p>
+        <p className="text-[#4ff4c6] mb-10">Last Updated: October 8, 2026</p>
 
         <div className="prose prose-invert max-w-none text-[#e8fff7]/90 leading-relaxed text-sm space-y-8">
-          <p>Cocoa Cash is a fully non-custodial wallet. We do not collect, store, or have access to any personal data, including IP addresses, email addresses, wallet keys, ecash tokens, or NWC tokens.</p>
+          <p>Cocoa Cash is a non-custodial wallet. We do not create accounts and we do not store your seed, proofs, or ecash on our servers. Those stay in your browser. The host that delivers this site can see technical request data such as IP address and user agent in ordinary server logs. We also load Vercel Analytics, which collects anonymous usage data and does not include your seed or proofs.</p>
 
           <p>All data (tokens, keys, and application state) is stored exclusively in your browser’s localStorage on your own device. Cocoa Cash never receives or transmits any of this information to our servers.</p>
 
@@ -22,7 +22,7 @@ export default function Privacy() {
           </ul>
 
           <h2 className="text-xl text-[#4ff4c6]">Anonymous Analytics</h2>
-          <p>We use Vercel Analytics to understand how the app is used. This data is completely anonymous and does not include any personal or wallet-related information.</p>
+          <p>We use Vercel Analytics to understand how the app is used. That data is anonymous usage data. It does not include your seed, proofs, or ecash. It is still third-party processing by the host.</p>
 
           <h2 className="text-xl text-[#4ff4c6]">Third-Party Services</h2>
           <p>When you interact with mints or Lightning nodes, you do so directly. Cocoa Cash has no visibility into or control over those interactions.</p>

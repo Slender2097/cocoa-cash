@@ -20,7 +20,7 @@ export default function SecurityConfig({ currentLevel, onUpgrade }) {
             </div>
           </div>
 
-          // Level 2 — Silent Seed 
+          // Level 2 — Local phrase 
           <div
             onClick={() => onUpgrade(2)}
             className={`p-4 rounded-2xl border cursor-pointer transition-colors ${
@@ -29,7 +29,7 @@ export default function SecurityConfig({ currentLevel, onUpgrade }) {
           >
             <div className="flex justify-between items-start">
               <div>
-                <p className="text-sm font-medium">Level 2 — Silent Seed</p>
+                <p className="text-sm font-medium">Level 2 — Local phrase</p>
                 <p className="text-xs text-[#e8fff7]/60">12-word recovery phrase</p>
               </div>
               {currentLevel === 2 && <span className="text-[#4ff4c6] text-xs font-medium">ACTIVE</span>}
@@ -77,22 +77,22 @@ export default function SecurityConfig({ currentLevel, onUpgrade }) {
           >
             <div className="flex justify-between items-start">
               <div>
-                <p className="text-sm font-medium">Level 2 — Silent Seed</p>
-                <p className="text-xs text-[#e8fff7]/60">View 12-word recovery phrase</p>
+                <p className="text-sm font-medium">Level 2 — Local phrase</p>
+                <p className="text-xs text-[#e8fff7]/60">View 12 words. Does not restore tokens</p>
               </div>
               {currentLevel === 2 && <span className="text-[#4ff4c6] text-xs font-medium">ACTIVE</span>}
             </div>
           </div>
 
-          {/* NEW: Restore Wallet (third button) */}
+          {/* NEW: Replace local phrase (third button) */}
           <div
             onClick={() => onUpgrade("restore")}
             className="p-4 rounded-2xl border cursor-pointer transition-colors border-white/10 hover:border-[#4ff4c6]/50"
           >
             <div className="flex justify-between items-start">
               <div>
-                <p className="text-sm font-medium text-[#4ff4c6]">Restore Wallet</p>
-                <p className="text-xs text-[#e8fff7]/60">Import from 12-word seed phrase</p>
+                <p className="text-sm font-medium text-[#4ff4c6]">Replace local phrase</p>
+                <p className="text-xs text-[#e8fff7]/60">Does not restore tokens</p>
               </div>
             </div>
           </div>

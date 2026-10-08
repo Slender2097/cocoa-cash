@@ -6,7 +6,7 @@ export default function Terms() {
     <div className="min-h-screen bg-[#14251f] text-[#e8fff7] py-12 px-6">
       <div className="max-w-4xl mx-auto">
         <h1 className="text-4xl font-bold mb-2">Terms of Service</h1>
-        <p className="text-[#4ff4c6] mb-10">Last Updated: April 26, 2026</p>
+        <p className="text-[#4ff4c6] mb-10">Last Updated: October 8, 2026</p>
 
         <div className="prose prose-invert max-w-none text-[#e8fff7]/90 leading-relaxed text-sm space-y-8">
           <p><strong>IMPORTANT NOTICE:</strong> THESE TERMS OF SERVICE INCLUDE A MEDIATION-FIRST CLAUSE REQUIRING MEDIATION BEFORE ARBITRATION OR LITIGATION. PLEASE READ THESE TERMS CAREFULLY. IF YOU DO NOT AGREE, DO NOT USE COCOA CASH.</p>
@@ -18,7 +18,7 @@ export default function Terms() {
           <p>These Terms of Service (these “Terms”) constitute the entire agreement and understanding between you (“you” or “your”) and Cocoa Cash (“Cocoa Cash,” “we,” “us,” or “our”) regarding your use of the Cocoa Cash website and any related applications, software, code, or services (collectively, the “Site” or “Services”). By accessing or using the Site or Services, you acknowledge that you have read, understand, and agree to be bound by these Terms. If you do not agree, do not access or use the Site or Services.</p>
 
           <h2 className="text-xl text-[#4ff4c6]">1. Nature of the Services</h2>
-          <p>1.1 Non-Custodial Web Application: Cocoa Cash provides a non-custodial web application (“wallet”) that is executed entirely on your device. Our Site merely makes available client-side code implementing the open-source Cashu protocol, Nostr Wallet Connect (NWC), and LNURL specifications. We do not run a server that holds your ecash or executes transactions on your behalf.</p>
+          <p>1.1 Non-Custodial Web Application: Cocoa Cash provides a non-custodial web application (“wallet”) that is executed entirely on your device. Our Site makes available client-side code that implements the open-source Cashu protocol. We do not run a server that holds your ecash or executes transactions on your behalf. We do not currently implement Nostr Wallet Connect (NWC) or LNURL.</p>
           <p>1.2 No Control Over Mints: Cocoa Cash does not issue ecash and does not operate or control any Mint. The choice of any Mint and any transaction or relationship you establish with that Mint is solely between you and that Mint. Cocoa Cash has no involvement, responsibility, or liability in any such interaction.</p>
           <p>1.3 No Funds Access: At no time does Cocoa Cash have custody, possession, or control of your ecash. Transactions occur solely by your actions and through your chosen Mint. We do not monitor, verify, or facilitate transfers between you and any Mint or other parties.</p>
           <p>1.4 Web Server Only: Cocoa Cash does not operate any servers except for the web server that delivers the application to your device. The application is executed entirely on your device. Once the code is served, all logic executes locally and Cocoa Cash has no control over the application.</p>
@@ -61,7 +61,7 @@ export default function Terms() {
           <p>You may not use the Site or Services for unlawful activities, to violate applicable laws, or to engage in market manipulation. We may suspend or terminate access for prohibited uses. You agree not to use the Site or Services to engage in any activity that violates applicable anti-money laundering (AML), counter-terrorism financing (CTF), or other financial crime regulations. Any use of the Site or Services for unlawful or fraudulent purposes is strictly prohibited.</p>
 
           <h2 className="text-xl text-[#4ff4c6]">10. Privacy and Data Protection</h2>
-          <p>10.1 GDPR Compliance: Cocoa Cash does not collect or store any personal data, including IP addresses. No data is shared with third parties. As such, Cocoa Cash does not engage in data processing activities that would subject it to GDPR or similar regulations. Users remain responsible for ensuring their own device’s security and verifying the authenticity of the code they run.</p>
+          <p>10.1 Data: Cocoa Cash does not create accounts and does not store your seed, proofs, or ecash. Those stay in your browser. The host that delivers the Site can see technical request data such as IP address and user agent in ordinary server logs. If Vercel Analytics is enabled, it receives anonymous usage data and not your seed or proofs. Users remain responsible for their device’s security and for verifying the code they run.</p>
           <p>10.2 Security: Because the code executes entirely on your device and no personal data is collected, Cocoa Cash does not perform any data processing activities that would fall under the GDPR or similar data protection laws.</p>
           <p>10.3 Local Data: Any data or information stored locally on your device, including browser storage, cookies, or application state, is controlled by you and not transmitted to or accessible by Cocoa Cash.</p>
 

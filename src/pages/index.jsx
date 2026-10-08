@@ -755,12 +755,12 @@ useEffect(() => {
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-xl">
           <div className="bg-[#1e3a32] border border-[#4ff4c6]/40 rounded-3xl p-8 max-w-md w-full mx-4">
             <h3 className="text-[#4ff4c6] text-xl font-medium mb-2">
-              {restoreMode ? "Restore Wallet" : "Silent Seed"}
+              {restoreMode ? "Replace local phrase" : "Local phrase"}
             </h3>
             <p className="text-[#e8fff7]/70 text-sm mb-6">
               {restoreMode
-                ? "Paste your 12-word seed phrase below"
-                : "Your recovery phrase"}
+                ? "This only replaces the phrase saved in this browser. It does not restore tokens."
+                : "This phrase does not restore your balance. Your tokens are the proofs saved in this browser."}
             </p>
 
             {!restoreMode && mnemonic && (
@@ -793,7 +793,7 @@ useEffect(() => {
                   onClick={async () => {
                     const success = await restoreFromSeed(tempSeed);
                     if (success) {
-                      alert("✅ Wallet restored successfully!");
+                      alert("Phrase replaced in this browser. This did not restore tokens.");
                       setShowSeedReveal(false);
                       setRestoreMode(false);
                       setTempSeed("");
