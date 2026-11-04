@@ -1,38 +1,43 @@
-// src/components/layout/Navbar.jsx
+// src/components/layout/Navbar.tsx
 import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { QRCodeSVG } from "qrcode.react";
+import { readJSON } from "@/lib/cashu/storage";
 
-export default function Navbar({ activeMint, onSwitchMint, onShowTransactionHistory }) {
-  const [savedMints, setSavedMints] = useState([]);
+type NavbarProps = {
+  activeMint: string;
+  onSwitchMint: (mint: string) => void;
+  onShowTransactionHistory?: (mint: string) => void;
+};
+
+export default function Navbar({ activeMint, onSwitchMint, onShowTransactionHistory }: NavbarProps) {
+  const [savedMints, setSavedMints] = useState<string[]>([]);
   const [showConfig, setShowConfig] = useState(false);
   const [newMintUrl, setNewMintUrl] = useState("");
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showJaguarMenu, setShowJaguarMenu] = useState(false);
 
   // Refs for click-outside detection
-  const configRef = useRef(null);
-  const mobileRef = useRef(null);
-  const jaguarRef = useRef(null);
+  const configRef = useRef<HTMLDivElement>(null);
+  const mobileRef = useRef<HTMLDivElement>(null);
+  const jaguarRef = useRef<HTMLDivElement>(null);
 
   // Load saved mints
   useEffect(() => {
-    const saved = localStorage.getItem("savedMints");
-    if (saved) {
-      setSavedMints(JSON.parse(saved));
-    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time hydration from localStorage
+    setSavedMints(readJSON<string[]>("savedMints", []));
   }, []);
 
   // === CLICK OUTSIDE TO CLOSE ALL MENUS ===
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (showConfig && configRef.current && !configRef.current.contains(event.target)) {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showConfig && configRef.current && !configRef.current.contains(event.target as Node)) {
         setShowConfig(false);
       }
-      if (showMobileMenu && mobileRef.current && !mobileRef.current.contains(event.target)) {
+      if (showMobileMenu && mobileRef.current && !mobileRef.current.contains(event.target as Node)) {
         setShowMobileMenu(false);
       }
-      if (showJaguarMenu && jaguarRef.current && !jaguarRef.current.contains(event.target)) {
+      if (showJaguarMenu && jaguarRef.current && !jaguarRef.current.contains(event.target as Node)) {
         setShowJaguarMenu(false);
       }
     };
@@ -46,7 +51,7 @@ export default function Navbar({ activeMint, onSwitchMint, onShowTransactionHist
     };
   }, [showConfig, showMobileMenu, showJaguarMenu]);
 
-  const saveMints = (mints) => {
+  const saveMints = (mints: string[]) => {
     localStorage.setItem("savedMints", JSON.stringify(mints));
     setSavedMints(mints);
   };
@@ -62,19 +67,19 @@ export default function Navbar({ activeMint, onSwitchMint, onShowTransactionHist
     setShowConfig(false);
   };
 
-  const removeMint = (urlToRemove) => {
+  const removeMint = (urlToRemove: string) => {
     const updated = savedMints.filter(url => url !== urlToRemove);
     saveMints(updated);
   };
 
-  const moveUp = (index) => {
+  const moveUp = (index: number) => {
     if (index === 0) return;
     const updated = [...savedMints];
     [updated[index], updated[index - 1]] = [updated[index - 1], updated[index]];
     saveMints(updated);
   };
 
-  const moveDown = (index) => {
+  const moveDown = (index: number) => {
     if (index === savedMints.length - 1) return;
     const updated = [...savedMints];
     [updated[index], updated[index + 1]] = [updated[index + 1], updated[index]];

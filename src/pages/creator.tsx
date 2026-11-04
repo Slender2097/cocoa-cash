@@ -1,4 +1,4 @@
-// src/pages/creator.jsx
+// src/pages/creator.tsx
 // Creator setup + admin board for the tip embed. Everything here lives in the
 // creator's browser: the receiving key (sealed with their passphrase), the
 // inbox of NUT-18 payloads, and the proofs (in the full wallet's store).
@@ -18,25 +18,38 @@ import {
 } from "@/lib/tip/config";
 import { generateSecretKey, getPublicKey, npubEncode, nsecEncode, nsecDecode } from "@/lib/tip/nut18";
 import { seal, unseal } from "@/lib/tip/seal";
-import { listRecords, readWalletProofs, sumProofs, rememberMint } from "@/lib/tip/records";
-import { INBOX, getWallet, syncInbox, claimAll } from "@/lib/tip/flows";
+import { readProofs, sumProofs, rememberMint, PROOFS_EVENT } from "@/lib/cashu/storage";
+import { getWallet, toHex, fromHex, errText } from "@/lib/cashu/outputs";
+import { INBOX, listInbox, syncInbox, claimAll } from "@/lib/tip/flows";
+import type { InboxRecord } from "@/lib/tip/flows";
+import type { Sealed } from "@/lib/tip/seal";
 
 const CONFIG_KEY = "cocoaTip.config";
-const toHex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
-const fromHex = (h) => new Uint8Array(h.match(/.{2}/g).map((x) => parseInt(x, 16)));
-const errText = (e) => (e && (e.message || String(e))) || "Something went wrong";
-const fmtTime = (ms) => (ms ? new Date(ms).toLocaleString() : "");
+type TipConfig = {
+  v: 1;
+  mints: string[];
+  amount: number | null;
+  label: string;
+  relays: string[];
+  pubkey: string;
+  npub: string;
+  sealedKey: Sealed;
+  createdAt: number;
+};
+type SettingsValues = { mints: string[]; amount: number | null; label: string; pass: string; nsec: string };
 
-function loadConfig() {
+const fmtTime = (ms?: number) => (ms ? new Date(ms).toLocaleString() : "");
+
+function loadConfig(): TipConfig | null {
   try {
     return JSON.parse(localStorage.getItem(CONFIG_KEY) || "null");
   } catch {
     return null;
   }
 }
-const saveConfig = (c) => localStorage.setItem(CONFIG_KEY, JSON.stringify(c));
+const saveConfig = (c: TipConfig) => localStorage.setItem(CONFIG_KEY, JSON.stringify(c));
 
-function Panel({ title, children, right }) {
+function Panel({ title, children, right }: { title: string; children: React.ReactNode; right?: React.ReactNode }) {
   return (
     <section className="glass rounded-3xl p-5 mb-5">
       <div className="flex items-center justify-between mb-3">
@@ -48,7 +61,7 @@ function Panel({ title, children, right }) {
   );
 }
 
-function CopyRow({ label, value }) {
+function CopyRow({ label, value }: { label: string; value: string }) {
   const [ok, setOk] = useState(false);
   return (
     <div className="mb-3">
@@ -56,7 +69,12 @@ function CopyRow({ label, value }) {
         <span className="text-xs opacity-70">{label}</span>
         <button
           className="text-xs text-[#4ff4c6]"
-          onClick={() => navigator.clipboard.writeText(value).then(() => (setOk(true), setTimeout(() => setOk(false), 1500)))}
+          onClick={() =>
+            navigator.clipboard.writeText(value).then(() => {
+              setOk(true);
+              setTimeout(() => setOk(false), 1500);
+            })
+          }
         >
           {ok ? "Copied ✓" : "Copy"}
         </button>
@@ -77,7 +95,15 @@ const ghostCls = "rounded-3xl px-4 py-2 text-sm border border-[#4ff4c6]/40 hover
 // ----------------------------------------------------------------------------
 // Settings form (used for first setup and for edits)
 // ----------------------------------------------------------------------------
-function SettingsForm({ initial, isNew, onSave }) {
+function SettingsForm({
+  initial,
+  isNew = false,
+  onSave,
+}: {
+  initial?: TipConfig;
+  isNew?: boolean;
+  onSave: (v: SettingsValues) => Promise<void>;
+}) {
   const [mints, setMints] = useState(initial?.mints?.join(", ") || "");
   const [amount, setAmount] = useState(initial?.amount ? String(initial.amount) : "");
   const [label, setLabel] = useState(initial?.label || "Tip");
@@ -86,12 +112,12 @@ function SettingsForm({ initial, isNew, onSave }) {
   const [nsec, setNsec] = useState("");
   const [trust, setTrust] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
 
   const mintList = mints.split(",").map(normalizeMint).filter(Boolean);
   const unknown = mintList.filter((m) => !isKnownMint(m));
 
-  const submit = async (e) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     if (!mintList.length) return setError("Add at least one mint");
@@ -196,26 +222,31 @@ function SettingsForm({ initial, isNew, onSave }) {
 
 // ----------------------------------------------------------------------------
 export default function CreatorPage() {
-  const [config, setConfig] = useState(undefined); // undefined = loading
-  const [skHex, setSkHex] = useState(null);
+  const [config, setConfig] = useState<TipConfig | null | undefined>(undefined); // undefined = loading
+  const [skHex, setSkHex] = useState<string | null>(null);
   const [pass, setPass] = useState("");
-  const [unlockError, setUnlockError] = useState(null);
+  const [unlockError, setUnlockError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [tick, setTick] = useState(0);
   const [syncing, setSyncing] = useState(false);
-  const [syncError, setSyncError] = useState(null);
-  const [lastSync, setLastSync] = useState(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [lastSync, setLastSync] = useState<number | null>(null);
   const [showNsec, setShowNsec] = useState(false);
   const [origin, setOrigin] = useState("https://cocoa.cash");
 
   useEffect(() => {
     setConfig(loadConfig());
     setOrigin(window.location.origin);
-    const onStorage = (e) => {
-      if (e.key === "proofsByMint" || e.key === INBOX) setTick((t) => t + 1);
+    const bump = () => setTick((t) => t + 1);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "proofsByMint" || e.key === INBOX) bump();
     };
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    window.addEventListener(PROOFS_EVENT, bump);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(PROOFS_EVENT, bump);
+    };
   }, []);
 
   const relays = config?.relays?.length ? config.relays : DEFAULT_RELAYS;
@@ -244,20 +275,20 @@ export default function CreatorPage() {
     return () => clearInterval(id);
   }, [skHex]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const inbox = useMemo(() => (typeof window === "undefined" ? [] : listRecords(INBOX)), [tick, skHex]); // eslint-disable-line
+  const inbox: InboxRecord[] = useMemo(() => (typeof window === "undefined" ? [] : listInbox()), [tick, skHex]); // eslint-disable-line
   const balances = useMemo(() => {
     if (typeof window === "undefined") return [];
-    const all = readWalletProofs();
+    const all = readProofs();
     const keys = new Set([...Object.keys(all), ...(config?.mints || []).map(walletMintKey)]);
     return [...keys]
       .map((k) => ({ mint: normalizeMint(k), sats: sumProofs(all[k]), configured: (config?.mints || []).some((m) => walletMintKey(m) === k) }))
       .filter((b) => b.sats > 0 || b.configured);
   }, [tick, config]); // eslint-disable-line
 
-  const createConfig = async ({ mints, amount, label, pass: pp, nsec }) => {
+  const createConfig = async ({ mints, amount, label, pass: pp, nsec }: SettingsValues) => {
     const sk = nsec ? nsecDecode(nsec) : generateSecretKey();
     const pubkey = getPublicKey(sk);
-    const next = {
+    const next: TipConfig = {
       v: 1,
       mints,
       amount,
@@ -274,19 +305,21 @@ export default function CreatorPage() {
     setSkHex(toHex(sk));
   };
 
-  const updateConfig = async ({ mints, amount, label }) => {
-    const next = { ...config, mints, amount, label };
+  const updateConfig = async ({ mints, amount, label }: SettingsValues) => {
+    if (!config) return;
+    const next: TipConfig = { ...config, mints, amount, label };
     saveConfig(next);
     mints.forEach(rememberMint);
     setConfig(next);
     setEditing(false);
   };
 
-  const unlock = async (e) => {
+  const unlock = async (e: React.FormEvent) => {
     e.preventDefault();
     setUnlockError(null);
+    if (!config) return;
     try {
-      const { sk } = await unseal(config.sealedKey, pass);
+      const { sk } = await unseal<{ sk: string }>(config.sealedKey, pass);
       setSkHex(sk);
       setPass("");
     } catch {
@@ -297,6 +330,7 @@ export default function CreatorPage() {
   // Read-only sealed export: a copy of the proofs and the receiving key,
   // encrypted with the admin passphrase. Nothing is removed from the wallet.
   const exportSealed = async () => {
+    if (!skHex) return;
     const pp = window.prompt("Passphrase to seal the export with:");
     if (!pp) return;
     const box = await seal(
@@ -304,7 +338,7 @@ export default function CreatorPage() {
         kind: "cocoa-tip-export",
         exportedAt: new Date().toISOString(),
         nsec: nsecEncode(fromHex(skHex)),
-        proofsByMint: readWalletProofs(),
+        proofsByMint: readProofs(),
       },
       pp
     );
@@ -463,7 +497,7 @@ export default function CreatorPage() {
   );
 }
 
-function Row({ r, amount, note }) {
+function Row({ r, amount, note }: { r: InboxRecord; amount?: number; note?: string | null }) {
   return (
     <div className="flex items-start justify-between gap-3 py-2 border-b border-white/5 last:border-0">
       <div className="min-w-0">

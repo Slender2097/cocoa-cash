@@ -1,9 +1,11 @@
-// src/pages/index.jsx
+// src/pages/index.tsx
 // MIT License
 // Copyright (c) 2026 Jose2097
 
 import React, { useState, useEffect, useRef } from "react";
 import useCashu from "@/hooks/useCashu";
+import { listOps, JOURNAL_EVENT } from "@/lib/cashu/journal";
+import type { SendOp } from "@/lib/cashu/journal";
 
 import Navbar from "@/components/layout/Navbar";
 import BalanceDisplay from "@/components/layout/BalanceDisplay";
@@ -13,6 +15,16 @@ import { QRCodeSVG } from "qrcode.react";
 import SecurityConfig from "@/components/layout/SecurityConfig";
 import WalletWelcomeModal from "@/components/layout/WalletWelcomeModal";
 import Image from "next/image";
+
+type ActionPanel = {
+  type: "mint" | "melt" | "swapSend" | "swapClaim";
+  status: "waiting" | "success" | "error";
+  invoice?: string;
+  token?: string | null;
+  message?: string;
+} | null;
+
+type Tx = { id: number; type: string; amount: number; mint: string; timestamp: string };
 
 export default function Home() {
   const {
@@ -44,13 +56,22 @@ export default function Home() {
   const [showSeedReveal, setShowSeedReveal] = useState(false);
   const [tempSeed, setTempSeed] = useState("");
   const [restoreMode, setRestoreMode] = useState(false);
-  const [actionPanel, setActionPanel] = useState(null);
+  const [actionPanel, setActionPanel] = useState<ActionPanel>(null);
   const [showScanner, setShowScanner] = useState(false);
-  const [scannerTarget, setScannerTarget] = useState(null);
+  const [scannerTarget, setScannerTarget] = useState<"melt" | "swapClaim" | null>(null);
 
   const [showTransactionHistory, setShowTransactionHistory] = useState(false);
+  // Every token this wallet created is kept in the journal (never only in memory).
+  const [sentTokens, setSentTokens] = useState<SendOp[]>([]);
+  useEffect(() => {
+    if (!showTransactionHistory) return;
+    const load = () => setSentTokens(listOps().filter((o): o is SendOp => o.kind === "send" && !!o.token));
+    load();
+    window.addEventListener(JOURNAL_EVENT, load);
+    return () => window.removeEventListener(JOURNAL_EVENT, load);
+  }, [showTransactionHistory]);
   
-  const [transactions, setTransactions] = useState(() => {
+  const [transactions, setTransactions] = useState<Tx[]>(() => {
     if (typeof window === "undefined") return [];   // ← Important for Next.js SSR
     const saved = localStorage.getItem("transaction_history");
     return saved ? JSON.parse(saved) : [];
@@ -60,9 +81,9 @@ export default function Home() {
 const [showWelcomeModal, setShowWelcomeModal] = useState(false);
 
   // Ref for click-outside on Security panel
-  const securityRef = useRef(null);
+  const securityRef = useRef<HTMLDivElement>(null);
 
-  const lastProcessedRef = useRef(null);
+  const lastProcessedRef = useRef<string | null>(null);
 
 // Check localStorage only on the client after mount
 useEffect(() => {
@@ -82,15 +103,14 @@ useEffect(() => {
     swapToken: "",
   });
 
-  const handleChange = (e) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSelectMint = (mintUrl) => {
+  const handleSelectMint = (mintUrl: string) => {
     setFormData((prev) => ({ ...prev, mintUrl }));
-    handleSetMint(mintUrl);
-    switchMint(mintUrl);
+    handleSetMint(mintUrl); // also switches the active mint
   };
 
   const copyMintUrl = () => {
@@ -117,7 +137,7 @@ useEffect(() => {
     if (!dataOutput || !actionPanel?.type) return;
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    setActionPanel((prev) => {
+    setActionPanel((prev): ActionPanel => {
       if (!prev) return prev;
 
       // 1. Mint → Lightning invoice
@@ -148,7 +168,7 @@ useEffect(() => {
         dataOutput.status?.includes("Claim successful") ||
         dataOutput.success
       ) {
-        const updated = {
+        const updated: ActionPanel = {
           ...prev,
           status: "success",
           message: dataOutput.success || dataOutput.message || "Operation completed!",
@@ -174,8 +194,8 @@ useEffect(() => {
 
     // === CLICK OUTSIDE TO CLOSE SECURITY PANEL ===
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (showSecurity && securityRef.current && !securityRef.current.contains(event.target)) {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showSecurity && securityRef.current && !securityRef.current.contains(event.target as Node)) {
         setShowSecurity(false);
       }
     };
@@ -189,44 +209,17 @@ useEffect(() => {
     };
   }, [showSecurity]);
 
-    // === QR Scanner (now correctly fills Melt OR Swap Claim) ===
-  /*useEffect(() => {
-    if (!showScanner) return;
 
-    const { Html5QrcodeScanner } = require("html5-qrcode");
-
-    const scanner = new Html5QrcodeScanner(
-      "qr-reader",
-      { fps: 10, qrbox: { width: 250, height: 250 } },
-      false
-    );
-
-    scanner.render(
-      (decodedText) => {
-        if (scannerTarget === "swapClaim") {
-          setFormData((prev) => ({ ...prev, swapToken: decodedText }));
-          alert(" Cashu token scanned successfully!");
-        } else {
-          setFormData((prev) => ({ ...prev, meltInvoice: decodedText }));
-          alert(" Lightning invoice scanned successfully!");
-        }
-
-        setShowScanner(false);
-        setScannerTarget(null);   // reset for next time
-      },
-      (error) => console.warn(error)
-    );
-
-    return () => scanner.clear();
-  }, [showScanner, scannerTarget]);*/
 
     // === STRONG & RELIABLE QR SCANNER (optimized for Lightning + V4 tokens) ===
   useEffect(() => {
     if (!showScanner) return;
 
-    const { Html5QrcodeScanner } = require("html5-qrcode");
-
-    const scanner = new Html5QrcodeScanner(
+    let scanner: import("html5-qrcode").Html5QrcodeScanner | null = null;
+    let cancelled = false;
+    import("html5-qrcode").then(({ Html5QrcodeScanner }) => {
+    if (cancelled) return;
+    scanner = new Html5QrcodeScanner(
       "qr-reader",
       {
         fps: 25,
@@ -241,7 +234,7 @@ useEffect(() => {
     );
 
     scanner.render(
-      (decodedText) => {
+      (decodedText: string) => {
         let cleanText = decodedText.trim();
 
         // Remove lightning: prefix if present
@@ -260,16 +253,17 @@ useEffect(() => {
         setShowScanner(false);
         setScannerTarget(null);
       },
-      (error) => {
-        // Hide common "no QR found" spam
-        if (error !== "NotFoundException") {
-          console.warn(error);
-        }
+      () => {
+        // ignore per-frame "no QR found" errors
       }
     );
+    });
 
-    return () => scanner.clear();
-  }, [showScanner, scannerTarget]);;
+    return () => {
+      cancelled = true;
+      scanner?.clear().catch(() => {});
+    };
+  }, [showScanner, scannerTarget]);
 
     // === FINAL ROBUST TRANSACTION RECORDER ===
 
@@ -278,13 +272,13 @@ useEffect(() => {
 
     const isSuccess = 
       dataOutput.status?.toLowerCase().includes("success") || 
-      dataOutput.success === true ||
+      !!dataOutput.success ||
       dataOutput.token !== undefined;
 
     if (!isSuccess) return;
 
     // Get type from hook first (most reliable)
-    let type = dataOutput.type;
+    let type: string | undefined = dataOutput.type;
 
     // Fallback if hook doesn't send type
     if (!type && actionPanel?.type) {
@@ -333,7 +327,7 @@ useEffect(() => {
         timestamp: new Date().toLocaleString(),
       };
 
-      setTransactions(prev => [newTx, ...prev]);
+      setTransactions((prev) => [newTx, ...prev]);
     }
   }, [dataOutput, activeMint, actionPanel, formData]);
 
@@ -593,7 +587,7 @@ useEffect(() => {
                 const amount = parseInt(formData.mintAmount);
                 if (!amount || amount < 1) return alert("Please enter a valid amount");
 
-                setActionPanel({ type: "mint", status: "waiting", invoice: null });
+                setActionPanel({ type: "mint", status: "waiting" });
 
                 await handleMint(amount);
                 
@@ -875,6 +869,28 @@ useEffect(() => {
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+              {sentTokens.length > 0 && (
+                <details className="bg-[#14251f] p-4 rounded-2xl">
+                  <summary className="cursor-pointer text-[#4ff4c6]">Sent tokens ({sentTokens.length})</summary>
+                  <p className="text-xs text-[#e8fff7]/60 mt-2">
+                    Copies of every token you created. If a receiver never claimed one, you can claim it back.
+                  </p>
+                  {sentTokens.map((op) => (
+                    <div key={op.id} className="mt-3 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm text-[#e8fff7]">{op.amount} sat</p>
+                        <p className="text-xs text-[#e8fff7]/60">{new Date(op.createdAt).toLocaleString()}</p>
+                      </div>
+                      <button
+                        onClick={() => navigator.clipboard.writeText(op.token || "")}
+                        className="px-4 py-2 text-xs border border-[#4ff4c6]/40 rounded-3xl text-[#e8fff7] shrink-0"
+                      >
+                        Copy token
+                      </button>
+                    </div>
+                  ))}
+                </details>
+              )}
               {transactions.length === 0 ? (
                 <div className="text-center py-16 text-[#e8fff7]/40">
                   <p className="text-7xl mb-6">🕒</p>

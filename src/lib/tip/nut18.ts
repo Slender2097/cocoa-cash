@@ -1,4 +1,4 @@
-// src/lib/tip/nut18.js
+// src/lib/tip/nut18.ts
 // NUT-18 payment requests over the nostr transport.
 //
 // NUT-18 defines the request (creqA...) and the payload a sender delivers:
@@ -11,16 +11,33 @@
 // MIT License
 
 import { PaymentRequest, PaymentRequestTransportType } from "@cashu/cashu-ts";
+import type { ProofLike } from "@cashu/cashu-ts";
 import { SimplePool } from "nostr-tools/pool";
 import * as nip17 from "nostr-tools/nip17";
 import * as nip19 from "nostr-tools/nip19";
 import { generateSecretKey, getPublicKey } from "nostr-tools/pure";
+import type { NostrEvent } from "nostr-tools/pure";
 
-let pool = null;
+/** NUT-18 payload. */
+export type Nut18Payload = { id?: string; memo?: string; mint: string; unit: string; proofs: ProofLike[] };
+
+let pool: SimplePool | null = null;
 const getPool = () => (pool ||= new SimplePool());
 
 /** NUT-18 request string (creqA) for "pay with any Cashu wallet". */
-export function buildPaymentRequest({ pubkey, relays, mints, amount, description }) {
+export function buildPaymentRequest({
+  pubkey,
+  relays,
+  mints,
+  amount,
+  description,
+}: {
+  pubkey: string;
+  relays: string[];
+  mints: string[];
+  amount?: number;
+  description?: string;
+}): string {
   const nprofile = nip19.nprofileEncode({ pubkey, relays });
   const transport = [
     { type: PaymentRequestTransportType.NOSTR, target: nprofile, tags: [["n", "17"]] },
@@ -43,12 +60,12 @@ export function buildPaymentRequest({ pubkey, relays, mints, amount, description
  * The signed event is stored by the caller before publishing, so a retry
  * republishes the exact same event and the receiver can de-duplicate by id.
  */
-export function wrapPayload(recipientPubkey, payload) {
+export function wrapPayload(recipientPubkey: string, payload: Nut18Payload): NostrEvent {
   const sk = generateSecretKey();
   return nip17.wrapEvent(sk, { publicKey: recipientPubkey }, JSON.stringify(payload));
 }
 
-export async function publishWrap(wrap, relays) {
+export async function publishWrap(wrap: NostrEvent, relays: string[]): Promise<number> {
   const results = await Promise.allSettled(getPool().publish(relays, wrap, { maxWait: 8000 }));
   const ok = results.filter((r) => r.status === "fulfilled").length;
   if (!ok) throw new Error("No relay accepted the message. Check your connection and retry.");
@@ -60,18 +77,21 @@ export async function publishWrap(wrap, relays) {
  * randomised created_at (NIP-59), so no `since` filter is used.
  * Returns [{ id, createdAt, payload }] where id is the gift wrap event id.
  */
-export async function fetchPayloads(sk, relays) {
+export async function fetchPayloads(
+  sk: Uint8Array,
+  relays: string[]
+): Promise<Array<{ id: string; createdAt: number; payload: Nut18Payload }>> {
   const pk = getPublicKey(sk);
   const events = await getPool().querySync(relays, { kinds: [1059], "#p": [pk] }, { maxWait: 8000 });
-  const out = [];
-  const seen = new Set();
+  const out: Array<{ id: string; createdAt: number; payload: Nut18Payload }> = [];
+  const seen = new Set<string>();
   for (const ev of events) {
     if (seen.has(ev.id)) continue;
     seen.add(ev.id);
     try {
       const rumor = nip17.unwrapEvent(ev, sk);
       if (rumor.kind !== 14) continue;
-      const payload = JSON.parse(rumor.content);
+      const payload = JSON.parse(rumor.content) as Nut18Payload;
       if (!payload || !Array.isArray(payload.proofs) || !payload.mint) continue;
       out.push({ id: ev.id, createdAt: rumor.created_at * 1000, payload });
     } catch {
@@ -82,9 +102,9 @@ export async function fetchPayloads(sk, relays) {
 }
 
 export { generateSecretKey, getPublicKey };
-export const npubEncode = (hex) => nip19.npubEncode(hex);
-export const nsecEncode = (sk) => nip19.nsecEncode(sk);
-export function nsecDecode(nsec) {
+export const npubEncode = (hex: string) => nip19.npubEncode(hex);
+export const nsecEncode = (sk: Uint8Array) => nip19.nsecEncode(sk);
+export function nsecDecode(nsec: string): Uint8Array {
   const d = nip19.decode(String(nsec).trim());
   if (d.type !== "nsec") throw new Error("Not an nsec");
   return d.data;

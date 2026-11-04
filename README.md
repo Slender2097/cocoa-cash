@@ -56,13 +56,29 @@ Nothing here is custom. Everything is defined by a Cashu NUT or a Nostr NIP:
 - **Finality:** a tip counts as received **only** when your browser completes a NUT-03 swap of the delivered proofs and unblinds the new outputs. The outputs are saved before the swap request. If the reply is lost, NUT-07 shows the inputs are spent and NUT-09 restore recovers the outputs. If NUT-09 returns nothing, someone else spent the token first, and it's marked failed. A NUT-07 state is never treated as a payment.
 - **Custody:** cocoa.cash has no server component for tips. The relays only see encrypted gift wraps. The mint is the only custodian, as with any Cashu mint.
 
-The code is in `src/lib/tip/`, `src/pages/tip.jsx`, `src/pages/creator.jsx` and `public/tip.js`.
+The tip code is in `src/lib/tip/`, `src/pages/tip.tsx`, `src/pages/creator.tsx` and `public/tip.js`.
+
+## Wallet safety (all operations)
+
+The full wallet and the tip board share the same write-ahead journal in `src/lib/cashu/journal.ts`:
+
+| Operation | NUTs | Written before the mint call | Recovery after a lost reply |
+|---|---|---|---|
+| Mint | NUT-04 | quote, then blinded outputs | NUT-09 restore of those outputs |
+| Melt | NUT-05, NUT-08 | inputs (reserved, not spendable) + change outputs | NUT-05 quote state: PAID → NUT-09 change, UNPAID → inputs back after NUT-07 shows them UNSPENT, PENDING → wait |
+| Send (create token) | NUT-03 | inputs + keep/send outputs | NUT-09 restore. The token is saved in History, so closing the tab can't lose it |
+| Claim token / tip | NUT-03 (+ NUT-11) | token inputs + outputs | NUT-07 SPENT → NUT-09 restore. If NUT-09 returns nothing, the token was spent by someone else and is marked failed |
+
+Open operations resume automatically when the wallet connects. Proofs are stored in `localStorage` and amounts are plain numbers. cashu-ts v4 `Amount` objects are converted in one place: `src/lib/cashu/storage.ts`.
 
 ## Development
+
+TypeScript (strict), Next.js, Tailwind, `@cashu/cashu-ts` v4.
 
 ```bash
 npm install
 npm run dev
+npm run typecheck && npm run lint && npm run build
 ```
 
 Open http://localhost:3000. The tip widget is at `/tip` and the creator board is at `/creator`.

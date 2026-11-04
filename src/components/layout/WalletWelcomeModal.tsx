@@ -1,8 +1,8 @@
-// src/components/WalletWelcomeModal.jsx
+// src/components/WalletWelcomeModal.tsx
 import React from 'react';
 import Link from 'next/link';
 
-export default function WalletWelcomeModal({ isOpen, onAccept }) {
+export default function WalletWelcomeModal({ isOpen, onAccept }: { isOpen: boolean; onAccept: () => void }) {
 if (!isOpen) return null;
 
 const handleContinue = () => {

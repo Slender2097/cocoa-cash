@@ -1,8 +1,11 @@
-// src/lib/tip/config.js
+// src/lib/tip/config.ts
 // Tip-embed configuration: query params, mint allowlist, URL helpers.
 // MIT License
 
 import * as nip19 from "nostr-tools/nip19";
+import { normalizeMint, walletMintKey } from "@/lib/cashu/storage";
+
+export { normalizeMint, walletMintKey };
 
 // Short built-in list of mints we know about. Not an endorsement: any mint
 // works, the UI only warns when a creator picks one that is not listed here.
@@ -21,25 +24,11 @@ export const DEFAULT_RELAYS = [
   "wss://relay.primal.net",
 ];
 
-// Mint URL without trailing slash: the form used inside tokens and NUT-18
-// requests.
-export const normalizeMint = (url) => {
-  let u = String(url || "").trim();
-  if (!u) return "";
-  if (!/^https?:\/\//i.test(u)) u = "https://" + u;
-  return u.replace(/\/+$/, "");
-};
-
-// The key the full wallet uses in `proofsByMint` (useCashu.handleSetMint
-// appends a trailing slash). Tips must land under the same key so the
-// existing Mint / Melt / Send screens see them.
-export const walletMintKey = (url) => normalizeMint(url) + "/";
-
-export const isKnownMint = (url) =>
+export const isKnownMint = (url: string) =>
   KNOWN_MINTS.map(normalizeMint).includes(normalizeMint(url));
 
 // Accepts npub1..., nprofile1... or 64-char hex. Returns x-only hex pubkey.
-export function parsePubkey(input) {
+export function parsePubkey(input: unknown): string {
   const v = String(input || "").trim();
   if (/^[0-9a-f]{64}$/i.test(v)) return v.toLowerCase();
   const decoded = nip19.decode(v);
@@ -50,7 +39,7 @@ export function parsePubkey(input) {
 
 // NUT-11 P2PK expects a compressed SEC1 key. Nostr keys are x-only BIP-340
 // keys; Schnorr signatures only depend on the x coordinate, so "02" + x works.
-export const p2pkPubkey = (xonlyHex) => "02" + xonlyHex;
+export const p2pkPubkey = (xonlyHex: string) => "02" + xonlyHex;
 
 /**
  * Parse the embed params. Same names for the iframe query string and the
@@ -61,8 +50,18 @@ export const p2pkPubkey = (xonlyHex) => "02" + xonlyHex;
  *   relays – optional, comma separated wss:// URLs
  *   label  – optional button text, e.g. "Donate"
  */
-export function parseTipParams(query) {
-  const get = (k) => {
+export type TipParams = {
+  mints: string[];
+  amount: number | null;
+  pubkey: string | null;
+  relays: string[];
+  customRelays: boolean;
+  label: string;
+  error: string | null;
+};
+
+export function parseTipParams(query: Record<string, string | string[] | undefined>): TipParams {
+  const get = (k: string): string => {
     const v = query?.[k];
     return Array.isArray(v) ? v.join(",") : v || "";
   };
@@ -78,8 +77,8 @@ export function parseTipParams(query) {
     .filter((r) => /^wss?:\/\//.test(r));
   const label = get("label").slice(0, 24) || "Tip";
 
-  let pubkey = null;
-  let error = null;
+  let pubkey: string | null = null;
+  let error: string | null = null;
   try {
     pubkey = parsePubkey(get("npub"));
   } catch {
@@ -99,7 +98,21 @@ export function parseTipParams(query) {
   };
 }
 
-export function buildEmbed({ origin, mints, amount, npub, relays, label }) {
+export function buildEmbed({
+  origin,
+  mints,
+  amount,
+  npub,
+  relays,
+  label,
+}: {
+  origin: string;
+  mints: string[];
+  amount: number | null;
+  npub: string;
+  relays?: string[];
+  label?: string;
+}) {
   const params = new URLSearchParams();
   params.set("mint", mints.map(normalizeMint).join(","));
   params.set("amount", amount ? String(amount) : "any");

@@ -1,8 +1,14 @@
-// src/components/layout/SecurityConfig.jsx
-// src/components/layout/SecurityConfig.jsx
+// src/components/layout/SecurityConfig.tsx
+// src/components/layout/SecurityConfig.tsx
 /*import React from "react";
 
-export default function SecurityConfig({ currentLevel, onUpgrade }) {
+export default function SecurityConfig({
+  currentLevel,
+  onUpgrade,
+}: {
+  currentLevel: number;
+  onUpgrade: (action: 1 | 2 | "restore") => void;
+}) {
   return (
     <>
       <div className="fixed bottom-20 right-6 bg-[#1e3a32] border border-[#4ff4c6]/30 rounded-3xl shadow-2xl p-6 w-80 z-50">
@@ -47,10 +53,16 @@ export default function SecurityConfig({ currentLevel, onUpgrade }) {
   );
 }*/
 
-// src/components/layout/SecurityConfig.jsx
+// src/components/layout/SecurityConfig.tsx
 import React from "react";
 
-export default function SecurityConfig({ currentLevel, onUpgrade }) {
+export default function SecurityConfig({
+  currentLevel,
+  onUpgrade,
+}: {
+  currentLevel: number;
+  onUpgrade: (action: 1 | 2 | "restore") => void;
+}) {
   return (
     <>
       <div className="fixed bottom-20 right-6 bg-[#1e3a32] border border-[#4ff4c6]/30 rounded-3xl shadow-2xl p-6 w-80 z-50">

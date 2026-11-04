@@ -1,9 +1,9 @@
-// src/components/layout/Footer.jsx
+// src/components/layout/Footer.tsx
 import React from "react";
 import Image from "next/image";
 import Link from "next/link";
 
-export default function Footer({ onOpenSecurity }) {
+export default function Footer({ onOpenSecurity }: { onOpenSecurity: () => void }) {
   return (
     <footer className="border-t border-white/10 py-8 bg-[#14251f]">
       <div className="max-w-4xl mx-auto px-6">
