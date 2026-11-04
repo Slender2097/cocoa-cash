@@ -4,7 +4,6 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import useCashu from "@/hooks/useCashu";
-import useProofStorage from "@/hooks/useProofStorage";
 
 import Navbar from "@/components/layout/Navbar";
 import BalanceDisplay from "@/components/layout/BalanceDisplay";
@@ -26,9 +25,11 @@ export default function Home() {
     handleMelt,
     handleSwapSend,
     handleSwapClaim,
-    setDataOutput,         
+    setDataOutput,
+    storage,
   } = useCashu();
 
+  // Same storage instance as useCashu (see the note there).
   const {
     activeMint,
     switchMint,
@@ -37,7 +38,7 @@ export default function Home() {
     resetWallet,
     mnemonic,
     restoreFromSeed,
-  } = useProofStorage();
+  } = storage;
 
   const [showSecurity, setShowSecurity] = useState(false);
   const [showSeedReveal, setShowSeedReveal] = useState(false);

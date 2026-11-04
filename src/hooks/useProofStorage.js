@@ -229,13 +229,14 @@ export default function useProofStorage() {
   });
 
   const [proofsByMint, setProofsByMint] = useState({});
-  const hasInitialized = useRef(false);   // ← Important guard
+  const hasInitialized = useRef(false);   // ← Important guard: proofs loaded from disk
+  const seedInitialized = useRef(false);  // separate guard so seed generation can't skip the proof load
 
   // Generate seed ONLY once
   useEffect(() => {
-    if (hasInitialized.current || mnemonic) return;
+    if (seedInitialized.current || mnemonic) return;
 
-    hasInitialized.current = true;
+    seedInitialized.current = true;
     const newMnemonic = bip39.generateMnemonic(128);
     setMnemonic(newMnemonic);
     localStorage.setItem("mnemonic", newMnemonic);
@@ -257,6 +258,19 @@ export default function useProofStorage() {
         console.error("Failed to load proofs:", err);
       }
     }
+  }, []);
+
+  // Another tab (e.g. the /creator tip board claiming tips) wrote proofs:
+  // reload them, so this tab's next save can't overwrite them with a stale copy.
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key !== "proofsByMint" || !e.newValue) return;
+      try {
+        setProofsByMint(JSON.parse(e.newValue, reviver) || {});
+      } catch {}
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   // SAVE - with strong guard to prevent deleting proofs

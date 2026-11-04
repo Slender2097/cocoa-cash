@@ -12,6 +12,7 @@ export default function useCashu() {
   const [pendingMints, setPendingMints] = useState([]);
   const isRestored = useRef(false);
 
+  const storage = useProofStorage();
   const {
     addProofs,
     balance,
@@ -23,7 +24,7 @@ export default function useCashu() {
     currentProofs,
     proofsByMint,
     addProofsToMint,
-  } = useProofStorage();
+  } = storage;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -355,6 +356,10 @@ useEffect(() => {
     handleSwapSend,
     handleSwapClaim,
     setDataOutput,
+    // The single proof-storage instance. Pages must use this one instead of
+    // calling useProofStorage() again: a second instance keeps a stale copy of
+    // proofsByMint and overwrites newer proofs on its next save.
+    storage,
   };
 }
 
