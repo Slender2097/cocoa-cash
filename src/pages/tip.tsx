@@ -380,11 +380,6 @@ export default function TipPage() {
           )}
 
           {error && <p className="text-xs text-red-300 mt-3 break-words">{error}</p>}
-          <p className="text-[10px] opacity-40 text-center mt-4">
-            <a href="https://cocoa.cash" target="_blank" rel="noreferrer">
-              cocoa.cash · Cashu
-            </a>
-          </p>
         </div>
       </div>
     </>

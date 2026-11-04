@@ -136,7 +136,6 @@ useEffect(() => {
   useEffect(() => {
     if (!dataOutput || !actionPanel?.type) return;
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     setActionPanel((prev): ActionPanel => {
       if (!prev) return prev;
 
@@ -190,6 +189,8 @@ useEffect(() => {
 
       return prev;
     });
+    // Runs only when the hook reports a new result; actionPanel is read via the updater.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataOutput]);
 
     // === CLICK OUTSIDE TO CLOSE SECURITY PANEL ===

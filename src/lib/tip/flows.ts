@@ -9,8 +9,8 @@
 // are recovered with NUT-09 (see src/lib/cashu/journal.ts).
 // MIT License
 
-import { getTokenMetadata, getEncodedToken, getP2PKExpectedWitnessPubkeys, CheckStateEnum, MintQuoteState } from "@cashu/cashu-ts";
-import type { ProofLike } from "@cashu/cashu-ts";
+import { Amount, getTokenMetadata, getEncodedToken, getP2PKExpectedWitnessPubkeys, CheckStateEnum, MintQuoteState } from "@cashu/cashu-ts";
+import type { Proof, ProofLike } from "@cashu/cashu-ts";
 import { getPublicKey } from "nostr-tools/pure";
 import { readJSON, writeJSON, sumProofs, normalizeMint, toStoredProof } from "@/lib/cashu/storage";
 import type { StoredProof } from "@/lib/cashu/storage";
@@ -238,7 +238,8 @@ export async function claimRecord(id: string, skHex: string): Promise<InboxRecor
     if (lockedToSomeoneElse(rec.payload.proofs, getPublicKey(fromHex(skHex)))) {
       return put<InboxRecord>(INBOX, id, { state: "FAILED", error: "Locked to a different key" });
     }
-    const token = getEncodedToken({ mint: rec.mint, unit: "sat", proofs: rec.payload.proofs as never });
+    const proofs: Proof[] = rec.payload.proofs.map((p) => ({ ...p, amount: Amount.from(p.amount) }));
+    const token = getEncodedToken({ mint: rec.mint, unit: "sat", proofs });
     rec = put<InboxRecord>(INBOX, id, { opId: `tip_${id}`, state: "SWAPPING" });
     await startReceive(token, { privkey: skHex, id: `tip_${id}` });
   } else {

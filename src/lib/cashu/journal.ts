@@ -140,7 +140,7 @@ export async function issueMint(wallet: Wallet, quoteId: string, outputs: Serial
     outputData,
     keysetId,
     quote: { quote: quoteId },
-  } as unknown as MintPreview;
+  } as unknown as MintPreview; // rebuilt from the persisted record; completeMint only reads these fields
   try {
     return await wallet.completeMint(preview);
   } catch (e) {
@@ -302,7 +302,7 @@ export async function advanceMelt(id: string): Promise<MeltOp> {
         outputData,
         keysetId: op.keysetId,
         quote: { quote: op.id, amount: Amount.from(op.amount) },
-      } as unknown as MeltPreview;
+      } as unknown as MeltPreview; // rebuilt from the persisted record; completeMelt only reads these fields
       const res = await wallet.completeMelt(preview);
       const state = (res.quote as { state?: string }).state;
       if (state === MeltQuoteState.PAID) {
