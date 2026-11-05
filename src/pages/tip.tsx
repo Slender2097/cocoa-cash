@@ -8,7 +8,7 @@
 // The tip becomes final only when the creator's browser swaps it (NUT-03).
 // MIT License
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
 import { QRCodeSVG } from "qrcode.react";

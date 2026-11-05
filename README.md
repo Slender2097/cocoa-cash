@@ -82,3 +82,22 @@ npm run typecheck && npm run lint && npm run build
 ```
 
 Open http://localhost:3000. The tip widget is at `/tip` and the creator board is at `/creator`.
+
+### Project structure
+
+```
+src/
+  pages/              Routes (pages router): / wallet, /creator, /tip, /privacy, /terms
+  components/
+    wallet/           Wallet screens and sheets (BalanceCore, Orbs, FlowSheet, SeedVault, panels, glyphs)
+    ui/               Small reusable primitives (CopyButton, QrPlate, Check)
+  hooks/              useCashu, useProofStorage
+  lib/
+    cashu/            Proof storage, write-ahead journal, blinded output helpers
+    tip/              Tip embed: config, NUT-18 transport, flows, passphrase seal
+    utils/            Pure helpers (mintLabel)
+  styles/             Global CSS (component CSS modules sit next to their component)
+public/               Static assets and the tip.js embed
+```
+
+Shared types live next to the module that owns them (for example `ProofsByMint` in `lib/cashu/storage.ts`).

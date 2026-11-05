@@ -2,7 +2,7 @@
 // Camera QR scanner (html5-qrcode, loaded on demand). Strips "lightning:".
 // MIT License
 
-import React, { useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import Sheet from "./Sheet";
 
 export default function Scanner({ onResult, onClose }: { onResult: (text: string) => void; onClose: () => void }) {

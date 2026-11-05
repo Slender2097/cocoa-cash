@@ -2,7 +2,6 @@
 // First-visit welcome; stores `cocoa-welcome-accepted`.
 // MIT License
 
-import React from "react";
 import Image from "next/image";
 import Link from "next/link";
 

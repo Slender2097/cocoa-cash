@@ -4,9 +4,11 @@
 // All Cashu logic stays in useCashu / the journal.
 // MIT License
 
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Sheet from "./Sheet";
-import { QrPlate, CopyButton, Check } from "./bits";
+import { QrPlate } from "@/components/ui/QrPlate";
+import { CopyButton } from "@/components/ui/CopyButton";
+import { Check } from "@/components/ui/Check";
 import type { FlowType } from "./Orbs";
 import type { DataOutput } from "@/hooks/useCashu";
 

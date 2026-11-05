@@ -2,10 +2,10 @@
 // Local activity list plus every token this wallet created (from the journal).
 // MIT License
 
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Sheet from "./Sheet";
-import { CopyButton } from "./bits";
-import { mintLabel } from "./BalanceCore";
+import { CopyButton } from "@/components/ui/CopyButton";
+import { mintLabel } from "@/lib/utils/mintLabel";
 import { listOps, JOURNAL_EVENT } from "@/lib/cashu/journal";
 import type { SendOp } from "@/lib/cashu/journal";
 

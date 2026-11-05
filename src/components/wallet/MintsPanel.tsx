@@ -2,9 +2,9 @@
 // Saved mints (localStorage `savedMints`): connect, reorder, remove, add.
 // MIT License
 
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Sheet from "./Sheet";
-import { mintLabel } from "./BalanceCore";
+import { mintLabel } from "@/lib/utils/mintLabel";
 import { readJSON, writeJSON, normalizeMint, walletMintKey, sumProofs } from "@/lib/cashu/storage";
 import type { ProofsByMint } from "@/lib/cashu/storage";
 import { KNOWN_MINTS } from "@/lib/tip/config";

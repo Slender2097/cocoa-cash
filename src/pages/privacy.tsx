@@ -1,5 +1,4 @@
-// src/pages/privacy.jsx
-import React from 'react';
+// src/pages/privacy.tsx
 
 export default function Privacy() {
   return (

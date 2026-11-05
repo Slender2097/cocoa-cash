@@ -2,11 +2,10 @@
 // Jaguar menu: source code, donations, legal.
 // MIT License
 
-import React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import Sheet from "./Sheet";
-import { CopyButton } from "./bits";
+import { CopyButton } from "@/components/ui/CopyButton";
 
 const DONATE = "jose@pay.bitcoinjungle.app";
 
