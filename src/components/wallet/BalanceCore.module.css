@@ -1,0 +1,276 @@
+/* src/components/wallet/BalanceCore.module.css
+   Motion for the balance core: the idle breath, and the reaction when sats
+   come in or go out. Only transform and opacity move (plus the number's glow
+   during a reaction), so the browser can run it all on the compositor.
+   Palette only: neon #4ff4c6 · pulse #a3ffe0 · text #e8fff7 · void #07110d.
+   MIT License */
+
+.core {
+  --burst: cubic-bezier(0.16, 1, 0.3, 1); /* fast out, long settle */
+  --pull: cubic-bezier(0.55, 0, 0.75, 0.45); /* gathers speed inward */
+}
+
+/* ---- idle ------------------------------------------------------------------ */
+
+/* Outer ring: a slow, quiet breath on the halo's 6s rhythm. */
+.breathe {
+  animation: breathe 6s ease-in-out infinite;
+}
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.012);
+  }
+}
+
+/* ---- sats in ----------------------------------------------------------------
+   The lens charges, a bright wave leaves it and runs out through the rings
+   (inner ring first, then the rim), three sparks race along the rim, and the
+   number swells and glows harder before everything settles. */
+
+.core[data-flow="in"] .dash {
+  animation: dash-swell 0.9s var(--burst);
+}
+.core[data-flow="in"] .outer {
+  animation: outer-swell 1.1s var(--burst) 0.1s;
+}
+.core[data-flow="in"] .num {
+  animation: num-in 1s var(--burst);
+}
+@keyframes dash-swell {
+  22% {
+    transform: scale(1.05);
+  }
+}
+@keyframes outer-swell {
+  30% {
+    transform: scale(1.035);
+  }
+  70% {
+    transform: scale(0.997);
+  }
+}
+@keyframes num-in {
+  24% {
+    transform: scale(1.085);
+    text-shadow: 0 0 22px rgba(79, 244, 198, 0.95), 0 0 64px rgba(79, 244, 198, 0.6);
+  }
+  60% {
+    transform: scale(1.015);
+  }
+}
+
+/* Lens rim lights up and a soft light rises behind the number. */
+.charge {
+  border: 1px solid rgba(163, 255, 224, 0.5);
+  background: radial-gradient(circle, rgba(163, 255, 224, 0.16) 0%, rgba(79, 244, 198, 0.08) 45%, rgba(79, 244, 198, 0) 72%);
+  box-shadow: inset 0 0 30px rgba(79, 244, 198, 0.45), 0 0 26px rgba(79, 244, 198, 0.4);
+  opacity: 0;
+  animation: flash 1.1s var(--burst);
+}
+@keyframes flash {
+  14% {
+    opacity: 1;
+  }
+}
+
+/* Waves start on the lens rim. */
+.wave {
+  position: absolute;
+  inset: 15%;
+  border-radius: 9999px;
+  opacity: 0;
+}
+.expand {
+  border: 1px solid rgba(163, 255, 224, 0.9);
+  box-shadow: 0 0 18px rgba(79, 244, 198, 0.55), inset 0 0 18px rgba(79, 244, 198, 0.3);
+  animation: expand 1.15s cubic-bezier(0.2, 0.65, 0.3, 1);
+}
+@keyframes expand {
+  0% {
+    opacity: 0;
+    transform: scale(1);
+  }
+  10% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.68);
+  }
+}
+
+/* A spark: a light segment on the rim (r 97 of 100) with a glowing head,
+   carried around by rotating the whole layer. The tail is a conic gradient
+   cut down to a thin band, so it fades out behind the head. */
+.spark {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  animation: orbit 1.6s cubic-bezier(0.3, 0.6, 0.2, 1);
+}
+.spark::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: conic-gradient(
+    rgba(79, 244, 198, 0) 0deg,
+    rgba(79, 244, 198, 0) 298deg,
+    rgba(79, 244, 198, 0.5) 340deg,
+    rgba(232, 255, 247, 0.95) 360deg
+  );
+  mask-image: radial-gradient(
+    closest-side,
+    transparent 94.8%,
+    rgba(0, 0, 0, 0.3) 95.9%,
+    #000 96.6%,
+    #000 97.4%,
+    rgba(0, 0, 0, 0.3) 98.1%,
+    transparent 99.2%
+  );
+}
+.spark::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 1.5%;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 9999px;
+  background: #e8fff7;
+  box-shadow: 0 0 6px 1px rgba(163, 255, 224, 0.9), 0 0 16px 4px rgba(79, 244, 198, 0.55);
+}
+@keyframes orbit {
+  0% {
+    opacity: 0;
+    transform: rotate(var(--from));
+  }
+  12%,
+  58% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(calc(var(--from) + var(--travel)));
+  }
+}
+
+/* ---- sats out ---------------------------------------------------------------
+   The halo and the rings dim and draw in, a wave gathers outside the rim and
+   is pulled into the lens, the number dips for a moment, then all returns. */
+
+.core[data-flow="out"] .halo {
+  animation: halo-dim 1.3s ease-out;
+}
+.core[data-flow="out"] .outer {
+  animation: outer-draw 1.1s ease-in-out;
+}
+.core[data-flow="out"] .dash {
+  animation: dash-draw 1s ease-in-out 0.08s;
+}
+.core[data-flow="out"] .num {
+  animation: num-out 1.2s ease-out;
+}
+@keyframes halo-dim {
+  28% {
+    opacity: 0.35;
+    transform: scale(0.94);
+  }
+}
+@keyframes outer-draw {
+  32% {
+    opacity: 0.55;
+    transform: scale(0.968);
+  }
+  75% {
+    transform: scale(1.003);
+  }
+}
+@keyframes dash-draw {
+  35% {
+    opacity: 0.5;
+    transform: scale(0.945);
+  }
+}
+@keyframes num-out {
+  26% {
+    opacity: 0.8;
+    transform: scale(0.955);
+    text-shadow: 0 0 10px rgba(79, 244, 198, 0.35), 0 0 28px rgba(79, 244, 198, 0.12);
+  }
+}
+
+/* The lens darkens for a moment. */
+.drain {
+  background: radial-gradient(circle, rgba(7, 17, 13, 0.55) 0%, rgba(7, 17, 13, 0.3) 62%, rgba(7, 17, 13, 0) 100%);
+  opacity: 0;
+  animation: dim 1.3s ease-out;
+}
+@keyframes dim {
+  28% {
+    opacity: 1;
+  }
+}
+
+.collapse {
+  border: 1px solid rgba(163, 255, 224, 0.7);
+  box-shadow: 0 0 14px rgba(79, 244, 198, 0.4), inset 0 0 10px rgba(79, 244, 198, 0.2);
+  animation: collapse 0.95s var(--pull);
+}
+@keyframes collapse {
+  0% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+  35% {
+    opacity: 0.65;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+/* Second, softer wave right behind the first (both directions). */
+.echo {
+  border-color: rgba(163, 255, 224, 0.45);
+  box-shadow: 0 0 12px rgba(79, 244, 198, 0.3);
+  animation-delay: 0.17s;
+}
+
+/* ---- reduced motion -----------------------------------------------------------
+   Nothing moves or scales. The waves and sparks are not rendered at all, and
+   the number only brightens or dims; the lens still charges or darkens. */
+
+@media (prefers-reduced-motion: reduce) {
+  .breathe,
+  .core[data-flow] .halo,
+  .core[data-flow] .outer,
+  .core[data-flow] .dash {
+    animation: none;
+  }
+  .core[data-flow="in"] .num {
+    animation-name: num-in-still;
+  }
+  .core[data-flow="out"] .num {
+    animation-name: num-out-still;
+  }
+}
+@keyframes num-in-still {
+  24% {
+    text-shadow: 0 0 22px rgba(79, 244, 198, 0.95), 0 0 64px rgba(79, 244, 198, 0.6);
+  }
+}
+@keyframes num-out-still {
+  26% {
+    opacity: 0.8;
+    text-shadow: 0 0 10px rgba(79, 244, 198, 0.35), 0 0 28px rgba(79, 244, 198, 0.12);
+  }
+}

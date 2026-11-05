@@ -144,7 +144,13 @@ export default function Home() {
         </header>
 
         <main className="flex flex-1 flex-col items-center justify-center gap-10 py-8">
-          <BalanceCore balance={balance || 0} mint={activeMint} connected={walletReady && !!activeMint} onMints={() => setPanel({ k: "mints" })} />
+          <BalanceCore
+            balance={balance || 0}
+            mint={activeMint}
+            connected={walletReady && !!activeMint}
+            covered={!!panel || !!scanApply || welcome}
+            onMints={() => setPanel({ k: "mints" })}
+          />
           <Orbs disabled={false} onPick={openFlow} />
         </main>
       </div>
