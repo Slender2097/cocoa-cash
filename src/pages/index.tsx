@@ -13,7 +13,7 @@ import Cosmos from "@/components/wallet/Cosmos";
 import BalanceCore, { mintLabel } from "@/components/wallet/BalanceCore";
 import Orbs from "@/components/wallet/Orbs";
 import type { FlowType } from "@/components/wallet/Orbs";
-import { Glyph } from "@/components/wallet/bits";
+import { Glyph, TipsGlyph } from "@/components/wallet/bits";
 import FlowSheet from "@/components/wallet/FlowSheet";
 import MintsPanel from "@/components/wallet/MintsPanel";
 import SeedVault from "@/components/wallet/SeedVault";
@@ -132,13 +132,14 @@ export default function Home() {
             <Image src="/jaguar-logo.png" alt="cocoa.cash" width={80} height={60} className="h-14 w-auto drop-shadow-[0_0_14px_rgba(79,244,198,0.7)]" priority />
             <span className="hidden text-lg font-light tracking-[0.2em] text-[#e8fff7]/80 sm:inline">cocoa</span>
           </button>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <Glyph src="/palenque-logo2.png" label="Mints" onClick={() => setPanel({ k: "mints" })} />
             <Glyph src="/clock.png" label="History" onClick={() => setPanel({ k: "history" })} />
             <span className="relative">
               <Glyph src="/security-logo.png" label="Seed vault" onClick={() => setPanel({ k: "vault" })} />
               {securityLevel < 2 && <span className="pointer-events-none absolute right-0 top-0 h-2.5 w-2.5 rounded-full bg-amber-300 shadow-[0_0_8px_#fcd34d]" />}
             </span>
+            <TipsGlyph />
           </div>
         </header>
 

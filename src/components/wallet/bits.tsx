@@ -4,6 +4,7 @@
 
 import React, { useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
 
 /** Round button showing one of the existing glyph images (wide PNGs, art centered). */
@@ -13,11 +14,26 @@ export function Glyph({ src, label, onClick, size = 52 }: { src: string; label: 
       onClick={onClick}
       aria-label={label}
       title={label}
-      className="relative grid shrink-0 place-items-center overflow-hidden rounded-full border border-[#4ff4c6]/15 bg-[#07110d]/40 transition hover:border-[#4ff4c6]/60 hover:shadow-[0_0_24px_-6px_#4ff4c6] active:scale-95"
+      className={GLYPH_CLS}
       style={{ width: size, height: size }}
     >
       <Image src={src} alt="" fill sizes={`${size * 2}px`} className="scale-[1.55] object-cover drop-shadow-[0_0_8px_rgba(79,244,198,0.6)]" />
     </button>
+  );
+}
+
+const GLYPH_CLS =
+  "relative grid shrink-0 place-items-center overflow-hidden rounded-full border border-[#4ff4c6]/15 bg-[#07110d]/40 transition hover:border-[#4ff4c6]/60 hover:shadow-[0_0_24px_-6px_#4ff4c6] active:scale-95";
+
+/** Header link to the tip board (/creator), drawn to match the glyph images. */
+export function TipsGlyph({ size = 52 }: { size?: number }) {
+  return (
+    <Link href="/creator" aria-label="Tip board" title="Tip board" className={GLYPH_CLS} style={{ width: size, height: size }}>
+      <svg viewBox="0 0 24 24" className="h-8 w-8 text-[#4ff4c6] drop-shadow-[0_0_8px_rgba(79,244,198,0.7)]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round">
+        <path d="M12 20.5s-7.5-4.4-7.5-10.1A4.2 4.2 0 0 1 12 7.6a4.2 4.2 0 0 1 7.5 2.8c0 5.7-7.5 10.1-7.5 10.1z" />
+        <path d="m12.8 9.5-2.3 3.4h2.6l-1 3" />
+      </svg>
+    </Link>
   );
 }
 

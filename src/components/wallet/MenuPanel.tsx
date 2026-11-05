@@ -48,7 +48,7 @@ export default function MenuPanel({ onClose }: { onClose: () => void }) {
             Terms
           </Link>
           <Link href="/creator" className="hover:text-[#4ff4c6]">
-            Tip button
+            Tip board
           </Link>
         </div>
       </div>
