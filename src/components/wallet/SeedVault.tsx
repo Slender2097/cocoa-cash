@@ -7,10 +7,11 @@
 // this browser. The copy says so plainly.
 // MIT License
 
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import * as bip39 from "bip39";
 import Sheet from "./Sheet";
-import { CopyButton, Check } from "./bits";
+import { CopyButton } from "@/components/ui/CopyButton";
+import { Check } from "@/components/ui/Check";
 
 type View = "home" | "reveal" | "confirm" | "confirmed" | "restore" | "restored";
 

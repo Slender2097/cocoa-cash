@@ -5,15 +5,15 @@
 // The wallet screen. Presentation only: every action goes through useCashu
 // (and from there the write-ahead journal); nothing here touches proofs.
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Head from "next/head";
 import Image from "next/image";
 import useCashu from "@/hooks/useCashu";
 import Cosmos from "@/components/wallet/Cosmos";
-import BalanceCore, { mintLabel } from "@/components/wallet/BalanceCore";
+import BalanceCore from "@/components/wallet/BalanceCore";
 import Orbs from "@/components/wallet/Orbs";
 import type { FlowType } from "@/components/wallet/Orbs";
-import { Glyph, TipsGlyph } from "@/components/wallet/bits";
+import { Glyph, TipsGlyph } from "@/components/wallet/HeaderGlyphs";
 import FlowSheet from "@/components/wallet/FlowSheet";
 import MintsPanel from "@/components/wallet/MintsPanel";
 import SeedVault from "@/components/wallet/SeedVault";
@@ -22,6 +22,7 @@ import type { Tx } from "@/components/wallet/HistoryPanel";
 import MenuPanel from "@/components/wallet/MenuPanel";
 import Scanner from "@/components/wallet/Scanner";
 import WelcomeModal from "@/components/wallet/WelcomeModal";
+import { mintLabel } from "@/lib/utils/mintLabel";
 
 type Panel = { k: "flow"; type: FlowType } | { k: "mints"; note?: string } | { k: "vault" } | { k: "history" } | { k: "menu" } | null;
 

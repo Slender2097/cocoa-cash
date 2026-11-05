@@ -12,6 +12,7 @@
 
 import React, { memo, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import fx from "./BalanceCore.module.css";
+import { mintLabel } from "@/lib/utils/mintLabel";
 
 type Flow = "in" | "out";
 /** The latest reaction. A new `id` restarts its animations; `dir` is null once it has played. */
@@ -80,8 +81,6 @@ const Readout = memo(function Readout({ value, beat, instant }: { value: number;
     </div>
   );
 });
-
-export const mintLabel = (url: string) => url.replace(/^https?:\/\//, "").replace(/\/$/, "");
 
 export default function BalanceCore({
   balance,

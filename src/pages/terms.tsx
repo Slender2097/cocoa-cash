@@ -1,5 +1,4 @@
-// src/pages/terms.jsx
-import React from 'react';
+// src/pages/terms.tsx
 
 export default function Terms() {
   return (
