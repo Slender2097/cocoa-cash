@@ -8,6 +8,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Head from "next/head";
 import Link from "next/link";
+import Image from "next/image";
+import Cosmos from "@/components/wallet/Cosmos";
 import {
   KNOWN_MINTS,
   DEFAULT_RELAYS,
@@ -51,7 +53,7 @@ const saveConfig = (c: TipConfig) => localStorage.setItem(CONFIG_KEY, JSON.strin
 
 function Panel({ title, children, right }: { title: string; children: React.ReactNode; right?: React.ReactNode }) {
   return (
-    <section className="glass rounded-3xl p-5 mb-5">
+    <section className="glass rounded-[2rem] p-5 mb-5">
       <div className="flex items-center justify-between mb-3">
         <h2 className="font-mono text-xs uppercase tracking-[3px] text-[#4ff4c6]">{title}</h2>
         {right}
@@ -87,10 +89,10 @@ function CopyRow({ label, value }: { label: string; value: string }) {
 }
 
 const inputCls =
-  "w-full bg-[#0a1a14] border border-[#4ff4c6]/30 rounded-2xl px-4 py-3 text-[#e8fff7] placeholder:text-[#e8fff7]/40";
+  "w-full bg-[#07110d]/65 border border-[#4ff4c6]/25 rounded-2xl outline-none focus:border-[#4ff4c6]/80 px-4 py-3 text-[#e8fff7] placeholder:text-[#e8fff7]/40";
 const btnCls =
-  "rounded-3xl px-6 py-3 font-semibold text-[#0f1c18] bg-gradient-to-r from-[#4ff4c6] to-[#a3ffe0] disabled:opacity-50";
-const ghostCls = "rounded-3xl px-4 py-2 text-sm border border-[#4ff4c6]/40 hover:border-[#4ff4c6]";
+  "rounded-full px-6 py-3 font-semibold text-[#06120e] bg-gradient-to-r from-[#4ff4c6] to-[#a3ffe0] shadow-[0_0_30px_-10px_#a3ffe0] disabled:opacity-50";
+const ghostCls = "rounded-full px-4 py-2 text-sm border border-[#4ff4c6]/35 bg-[#07110d]/40 hover:border-[#4ff4c6]";
 
 // ----------------------------------------------------------------------------
 // Settings form (used for first setup and for edits)
@@ -364,9 +366,13 @@ export default function CreatorPage() {
         <title>Tip board · cocoa.cash</title>
         <meta name="robots" content="noindex" />
       </Head>
+      <Cosmos />
       <div className="max-w-2xl mx-auto px-4 py-8 text-[#e8fff7]">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold">Tip board</h1>
+          <h1 className="flex items-center gap-3 text-2xl font-light tracking-wide">
+            <Image src="/jaguar-logo.png" alt="" width={48} height={36} className="drop-shadow-[0_0_12px_rgba(79,244,198,0.7)]" />
+            Tip board
+          </h1>
           <div className="flex gap-2">
             <Link href="/" className={ghostCls}>
               Full wallet →

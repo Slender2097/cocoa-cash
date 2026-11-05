@@ -1,30 +1,31 @@
 // src/pages/index.tsx
 // MIT License
 // Copyright (c) 2026 Jose2097
+//
+// The wallet screen. Presentation only: every action goes through useCashu
+// (and from there the write-ahead journal); nothing here touches proofs.
 
-import React, { useState, useEffect, useRef } from "react";
-import useCashu from "@/hooks/useCashu";
-import { listOps, JOURNAL_EVENT } from "@/lib/cashu/journal";
-import type { SendOp } from "@/lib/cashu/journal";
-
-import Navbar from "@/components/layout/Navbar";
-import BalanceDisplay from "@/components/layout/BalanceDisplay";
-import Footer from "@/components/layout/Footer";
-import { QRCodeSVG } from "qrcode.react";
-
-import SecurityConfig from "@/components/layout/SecurityConfig";
-import WalletWelcomeModal from "@/components/layout/WalletWelcomeModal";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import Head from "next/head";
 import Image from "next/image";
+import useCashu from "@/hooks/useCashu";
+import Cosmos from "@/components/wallet/Cosmos";
+import BalanceCore, { mintLabel } from "@/components/wallet/BalanceCore";
+import Orbs from "@/components/wallet/Orbs";
+import type { FlowType } from "@/components/wallet/Orbs";
+import { Glyph } from "@/components/wallet/bits";
+import FlowSheet from "@/components/wallet/FlowSheet";
+import MintsPanel from "@/components/wallet/MintsPanel";
+import SeedVault from "@/components/wallet/SeedVault";
+import HistoryPanel from "@/components/wallet/HistoryPanel";
+import type { Tx } from "@/components/wallet/HistoryPanel";
+import MenuPanel from "@/components/wallet/MenuPanel";
+import Scanner from "@/components/wallet/Scanner";
+import WelcomeModal from "@/components/wallet/WelcomeModal";
 
-type ActionPanel = {
-  type: "mint" | "melt" | "swapSend" | "swapClaim";
-  status: "waiting" | "success" | "error";
-  invoice?: string;
-  token?: string | null;
-  message?: string;
-} | null;
+type Panel = { k: "flow"; type: FlowType } | { k: "mints"; note?: string } | { k: "vault" } | { k: "history" } | { k: "menu" } | null;
 
-type Tx = { id: number; type: string; amount: number; mint: string; timestamp: string };
+const SIGN: Record<string, number> = { mint: 1, "swap-claim": 1, melt: -1, "swap-send": -1 };
 
 export default function Home() {
   const {
@@ -40,892 +41,158 @@ export default function Home() {
     setDataOutput,
     storage,
   } = useCashu();
-
   // Same storage instance as useCashu (see the note there).
-  const {
-    activeMint,
-    switchMint,
-    securityLevel,
-    setSecurityLevel,
-    resetWallet,
-    mnemonic,
-    restoreFromSeed,
-  } = storage;
+  const { activeMint, securityLevel, setSecurityLevel, mnemonic, restoreFromSeed, proofsByMint } = storage;
 
-  const [showSecurity, setShowSecurity] = useState(false);
-  const [showSeedReveal, setShowSeedReveal] = useState(false);
-  const [tempSeed, setTempSeed] = useState("");
-  const [restoreMode, setRestoreMode] = useState(false);
-  const [actionPanel, setActionPanel] = useState<ActionPanel>(null);
-  const [showScanner, setShowScanner] = useState(false);
-  const [scannerTarget, setScannerTarget] = useState<"melt" | "swapClaim" | null>(null);
+  const [panel, setPanel] = useState<Panel>(null);
+  const [scanApply, setScanApply] = useState<((t: string) => void) | null>(null);
+  const [welcome, setWelcome] = useState(false);
+  const [toast, setToast] = useState<{ text: string; tone: "ok" | "error" } | null>(null);
+  const [transactions, setTransactions] = useState<Tx[]>([]);
 
-  const [showTransactionHistory, setShowTransactionHistory] = useState(false);
-  // Every token this wallet created is kept in the journal (never only in memory).
-  const [sentTokens, setSentTokens] = useState<SendOp[]>([]);
-  useEffect(() => {
-    if (!showTransactionHistory) return;
-    const load = () => setSentTokens(listOps().filter((o): o is SendOp => o.kind === "send" && !!o.token));
-    load();
-    window.addEventListener(JOURNAL_EVENT, load);
-    return () => window.removeEventListener(JOURNAL_EVENT, load);
-  }, [showTransactionHistory]);
-  
-  const [transactions, setTransactions] = useState<Tx[]>(() => {
-    if (typeof window === "undefined") return [];   // ← Important for Next.js SSR
-    const saved = localStorage.getItem("transaction_history");
-    return saved ? JSON.parse(saved) : [];
-  });
-
-// Initialize as false to prevent hydration mismatch with Next.js SSR
-const [showWelcomeModal, setShowWelcomeModal] = useState(false);
-
-  // Ref for click-outside on Security panel
-  const securityRef = useRef<HTMLDivElement>(null);
-
-  const lastProcessedRef = useRef<string | null>(null);
-
-// Check localStorage only on the client after mount
-useEffect(() => {
-  if (typeof window === "undefined") return;   // skip on server
-
-  const hasAccepted = localStorage.getItem('cocoa-welcome-accepted');
-  if (hasAccepted !== 'true') {
-    setShowWelcomeModal(true);
-  }
-}, []);
-
-  const [formData, setFormData] = useState({
-    mintUrl: "",
-    mintAmount: "",
-    meltInvoice: "",
-    swapAmount: "",
-    swapToken: "",
-  });
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const handleSelectMint = (mintUrl: string) => {
-    setFormData((prev) => ({ ...prev, mintUrl }));
-    handleSetMint(mintUrl); // also switches the active mint
-  };
-
-  const copyMintUrl = () => {
-    if (!activeMint) {
-      alert("No mint connected yet");
-      return;
-    }
-    navigator.clipboard.writeText(activeMint);
-    alert("Mint URL copied to clipboard!");
-  };
-
-  // Auto-hide success message after 3 seconds
-  useEffect(() => {
-    if (dataOutput?.status) {
-      const timer = setTimeout(() => {
-        setDataOutput(null);
-      }, 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [dataOutput?.status, setDataOutput]);
-
-  // === Sync dataOutput → Action Panel (Mint, Swap Send, etc.) - NO WARNING ===
-  useEffect(() => {
-    if (!dataOutput || !actionPanel?.type) return;
-
-    setActionPanel((prev): ActionPanel => {
-      if (!prev) return prev;
-
-      // 1. Mint → Lightning invoice
-      if (prev.type === "mint" && dataOutput.invoice) {
-        return {
-          ...prev,
-          status: "waiting",
-          invoice: dataOutput.invoice,
-          message: "Scan or pay this invoice with any Lightning wallet",
-        };
-      }
-
-      // 2. Swap Send → Cashu Token (this was missing before)
-      if (prev.type === "swapSend" && dataOutput.token) {
-        return {
-          ...prev,
-          status: "waiting",
-          token: dataOutput.token,
-          message: "Share this token with the receiver",
-        };
-      }
-
-      // 3. Success for any operation
-      if (
-        dataOutput.status?.includes("Mint successful") ||
-        dataOutput.status?.includes("Success") ||
-        dataOutput.status?.includes("Token created") ||
-        dataOutput.status?.includes("Claim successful") ||
-        dataOutput.success
-      ) {
-        const updated: ActionPanel = {
-          ...prev,
-          status: "success",
-          message: dataOutput.success || dataOutput.message || "Operation completed!",
-        };
-
-        // Auto-hide after 4 seconds
-        setTimeout(() => setActionPanel(null), 4000);
-        return updated;
-      }
-
-      // 4. Error
-      if (dataOutput.error) {
-        return {
-          ...prev,
-          status: "error",
-          message: dataOutput.error + (dataOutput.details ? ` — ${dataOutput.details}` : ""),
-        };
-      }
-
-      return prev;
-    });
-    // Runs only when the hook reports a new result; actionPanel is read via the updater.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dataOutput]);
-
-    // === CLICK OUTSIDE TO CLOSE SECURITY PANEL ===
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (showSecurity && securityRef.current && !securityRef.current.contains(event.target as Node)) {
-        setShowSecurity(false);
-      }
-    };
-
-    if (showSecurity) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [showSecurity]);
-
-
-
-    // === STRONG & RELIABLE QR SCANNER (optimized for Lightning + V4 tokens) ===
-  useEffect(() => {
-    if (!showScanner) return;
-
-    let scanner: import("html5-qrcode").Html5QrcodeScanner | null = null;
-    let cancelled = false;
-    import("html5-qrcode").then(({ Html5QrcodeScanner }) => {
-    if (cancelled) return;
-    scanner = new Html5QrcodeScanner(
-      "qr-reader",
-      {
-        fps: 25,
-        qrbox: { width: 400, height: 400 },        
-        aspectRatio: 1.0,
-        videoConstraints: {
-          facingMode: "environment",              
-        },
-        rememberLastUsedCamera: true
-      },
-      false
-    );
-
-    scanner.render(
-      (decodedText: string) => {
-        let cleanText = decodedText.trim();
-
-        // Remove lightning: prefix if present
-        if (cleanText.toLowerCase().startsWith("lightning:")) {
-          cleanText = cleanText.substring(10);
-        }
-
-        if (scannerTarget === "swapClaim") {
-          setFormData((prev) => ({ ...prev, swapToken: cleanText }));
-          alert("Cashu token scanned successfully!");
-        } else {
-          setFormData((prev) => ({ ...prev, meltInvoice: cleanText }));
-          alert("Lightning invoice scanned successfully!");
-        }
-
-        setShowScanner(false);
-        setScannerTarget(null);
-      },
-      () => {
-        // ignore per-frame "no QR found" errors
-      }
-    );
-    });
-
-    return () => {
-      cancelled = true;
-      scanner?.clear().catch(() => {});
-    };
-  }, [showScanner, scannerTarget]);
-
-    // === FINAL ROBUST TRANSACTION RECORDER ===
+  const close = useCallback(() => setPanel(null), []);
+  const closeScanner = useCallback(() => setScanApply(null), []);
 
   useEffect(() => {
-    if (!dataOutput || !activeMint) return;
-
-    const isSuccess = 
-      dataOutput.status?.toLowerCase().includes("success") || 
-      !!dataOutput.success ||
-      dataOutput.token !== undefined;
-
-    if (!isSuccess) return;
-
-    // Get type from hook first (most reliable)
-    let type: string | undefined = dataOutput.type;
-
-    // Fallback if hook doesn't send type
-    if (!type && actionPanel?.type) {
-      type = actionPanel.type;
-    }
-
-    if (!type && dataOutput.status) {
-      const s = dataOutput.status.toLowerCase();
-      if (s.includes("mint")) type = "mint";
-      else if (s.includes("melt") || s.includes("success")) type = "melt";
-      else if (s.includes("token") || s.includes("send")) type = "swap-send";
-      else if (s.includes("claim")) type = "swap-claim";
-    }
-
-    // Prevent duplicates
-    const key = `${type || "unknown"}-${dataOutput.status || dataOutput.token || ""}`;
-    if (lastProcessedRef.current === key) return;
-    lastProcessedRef.current = key;
-
-    let amount = dataOutput.amount || 0;
-    let sign = 1;
-
-    if (type === "mint") {
-      amount = dataOutput.amount || parseInt(formData.mintAmount) || 0;
-      sign = 1;
-    } 
-    else if (type === "melt") {
-      amount = dataOutput.amount || 0;
-      sign = -1;
-    } 
-    else if (type === "swap-send") {
-      amount = dataOutput.amount || parseInt(formData.swapAmount) || 0;
-      sign = -1;
-    } 
-    else if (type === "swap-claim") {
-      amount = dataOutput.amount || 0;
-      sign = 1;
-    }
-
-    if (type && amount > 0) {
-      const newTx = {
-        id: Date.now(),
-        type: type,
-        amount: amount * sign,
-        mint: activeMint,
-        timestamp: new Date().toLocaleString(),
-      };
-
-      setTransactions((prev) => [newTx, ...prev]);
-    }
-  }, [dataOutput, activeMint, actionPanel, formData]);
-
-    // === LOAD TRANSACTION HISTORY FROM LOCALSTORAGE ===
-  useEffect(() => {
-    const saved = localStorage.getItem("transaction_history");
-    if (saved) {
-      try {
-        setTransactions(JSON.parse(saved));
-      } catch (e) {
-        console.error("Failed to load transaction history");
-      }
+    if (localStorage.getItem("cocoa-welcome-accepted") !== "true") setWelcome(true);
+    try {
+      setTransactions(JSON.parse(localStorage.getItem("transaction_history") || "[]"));
+    } catch {
+      // keep empty
     }
   }, []);
 
-  // === SAVE TRANSACTION HISTORY TO LOCALSTORAGE ===
+  // Results that arrive while no action panel is open (mint connect, a paid
+  // invoice finishing in the background) become a short toast.
+  const flowOpen = panel?.k === "flow";
   useEffect(() => {
-    if (transactions.length > 0) {
-      localStorage.setItem("transaction_history", JSON.stringify(transactions));
-    }
-  }, [transactions]);
+    if (!dataOutput || flowOpen) return;
+    let next: { text: string; tone: "ok" | "error" } | null = null;
+    if (dataOutput.error) next = { text: `${dataOutput.error}${dataOutput.details ? `: ${dataOutput.details}` : ""}`, tone: "error" };
+    else if (dataOutput.status?.includes("Mint connected")) next = { text: `Connected to ${mintLabel(activeMint)}`, tone: "ok" };
+    else if (dataOutput.type === "mint") next = { text: `+${dataOutput.amount} sat received`, tone: "ok" };
+    if (!next) return;
+    setToast(next);
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataOutput]);
 
+  // Clear one-shot status results after a while (errors stay until replaced).
+  useEffect(() => {
+    if (!dataOutput?.status) return;
+    const t = setTimeout(() => setDataOutput(null), 5000);
+    return () => clearTimeout(t);
+  }, [dataOutput, setDataOutput]);
+
+  // Local activity list: one entry per successful result object.
+  const recorded = useRef<object | null>(null);
+  useEffect(() => {
+    const d = dataOutput;
+    if (!d || !d.type || !d.amount || recorded.current === d || !activeMint) return;
+    if (d.type !== "swap-send" && !d.status?.toLowerCase().includes("success")) return;
+    recorded.current = d;
+    const tx: Tx = { id: Date.now(), type: d.type, amount: d.amount * (SIGN[d.type] || 1), mint: activeMint, timestamp: new Date().toLocaleString() };
+    setTransactions((prev) => {
+      const next = [tx, ...prev];
+      localStorage.setItem("transaction_history", JSON.stringify(next));
+      return next;
+    });
+  }, [dataOutput, activeMint]);
+
+  const run = async (type: FlowType, input: string) => {
+    if (type === "mint") return handleMint(input);
+    if (type === "melt") return handleMelt(input);
+    if (type === "send") return handleSwapSend(input);
+    return handleSwapClaim(input);
+  };
+
+  const openFlow = (type: FlowType) => {
+    if (!walletReady || !activeMint) return setPanel({ k: "mints", note: "Connect a mint first." });
+    setPanel({ k: "flow", type });
+  };
+
+  const connect = (url: string) => {
+    setPanel(null);
+    handleSetMint(url);
+  };
 
   return (
     <>
-      <Navbar 
-        activeMint={activeMint} 
-        onSwitchMint={handleSelectMint}
-        onShowTransactionHistory={() => setShowTransactionHistory(true)}
-      />
+      <Head>
+        <title>cocoa.cash · Cashu wallet</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+        <meta name="theme-color" content="#07110d" />
+      </Head>
+      <Cosmos />
 
-
-      <div className="max-w-4xl mx-auto px-6 pt-6 pb-12">
-         <BalanceDisplay 
-          balance={balance || 0} 
-          isConnected={walletReady && !!activeMint}
-          hasError={!!dataOutput?.error}
-        />
-
-        {/* === MINT CONNECTION DISPLAY — ONLY when connecting a mint === */}
-        {dataOutput && !actionPanel && (
-          dataOutput.status?.includes("Mint connected") || 
-          (dataOutput.error && !dataOutput.status?.includes("Mint successful") && !dataOutput.status?.includes("Success"))
-        ) && (
-          <div className="mb-10 glass neon-glow rounded-3xl border border-[#4ff4c6]/30 p-6">
-
-            {/* SUCCESS - Mint Connected */}
-            {dataOutput.status && dataOutput.status.includes("Mint connected") && (
-              <>
-                <p className="font-mono text-sm text-[#4ff4c6] uppercase tracking-[4px]">
-                  Mint connected 
-                </p>
-                <div className="mt-4 font-mono bg-[#0a1a14] border border-[#4ff4c6]/30 rounded-2xl p-5 text-[#e8fff7] text-base leading-relaxed break-all flex items-start gap-3 shadow-inner">
-                  <span className="text-[#4ff4c6] select-none mt-px text-lg">➜</span>
-                  <span className="flex-1">
-                    {activeMint || "No mint connected"}
-                  </span>
-                </div>
-
-                <button
-                  onClick={copyMintUrl}
-                  className="mt-5 px-5 py-2 text-sm font-medium bg-[#14251f] border border-[#4ff4c6]/40 hover:border-[#4ff4c6] rounded-3xl text-[#e8fff7] transition-colors"
-                >
-                  Copy Mint URL
-                </button>
-              </>
-            )}
-
-            {/* ERROR - Connection Failed */}
-            {dataOutput.error && (
-              <>
-                <p className="font-mono text-sm text-red-400 uppercase tracking-[4px]">
-                  Connection failed 
-                </p>
-
-                <div className="mt-4 font-mono bg-[#0a1a14] border border-[#4ff4c6]/30 rounded-2xl p-5 text-[#e8fff7] text-base leading-relaxed break-all flex items-start gap-3 shadow-inner">
-                  <span className="text-[#4ff4c6] select-none mt-px text-lg">➜</span>
-                  <span className="flex-1">
-                    {dataOutput.details || dataOutput.error}
-                  </span>
-                </div>
-              </>
-            )}
+      <div className="mx-auto flex min-h-[100dvh] max-w-xl flex-col px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))]">
+        <header className="flex items-center justify-between">
+          <button onClick={() => setPanel({ k: "menu" })} aria-label="Menu" className="flex items-center gap-2 rounded-2xl p-1 transition active:scale-95">
+            <Image src="/jaguar-logo.png" alt="cocoa.cash" width={80} height={60} className="h-14 w-auto drop-shadow-[0_0_14px_rgba(79,244,198,0.7)]" priority />
+            <span className="hidden text-lg font-light tracking-[0.2em] text-[#e8fff7]/80 sm:inline">cocoa</span>
+          </button>
+          <div className="flex items-center gap-2">
+            <Glyph src="/palenque-logo2.png" label="Mints" onClick={() => setPanel({ k: "mints" })} />
+            <Glyph src="/clock.png" label="History" onClick={() => setPanel({ k: "history" })} />
+            <span className="relative">
+              <Glyph src="/security-logo.png" label="Seed vault" onClick={() => setPanel({ k: "vault" })} />
+              {securityLevel < 2 && <span className="pointer-events-none absolute right-0 top-0 h-2.5 w-2.5 rounded-full bg-amber-300 shadow-[0_0_8px_#fcd34d]" />}
+            </span>
           </div>
-        )}
+        </header>
 
-        {/* === NEW UNIFIED ACTION PANEL (Mint + Melt + Swap Send + Swap Claim) === */}
-        {actionPanel && (
-          <div className="mb-10 glass neon-glow rounded-3xl border border-[#4ff4c6]/30 p-6 relative overflow-hidden">
-
-            {/* Close button X */}
-            <button
-              onClick={() => setActionPanel(null)}
-              className="absolute top-5 right-5 text-[#4ff4c6] hover:text-red-400 text-4xl leading-none transition-colors z-10"
-            >
-              ×
-            </button>
-
-            {/* MINT PANEL */}
-            {actionPanel?.type === "mint" && (
-              <>
-                <p className="font-mono text-sm text-[#4ff4c6] uppercase tracking-[4px]">
-                  {actionPanel.status === "waiting"
-                    ? "WAITING FOR PAYMENT ⚡"
-                    : actionPanel.status === "success"
-                    ? "PAYMENT RECEIVED!"
-                    : "ERROR"}
-                </p>
-
-                {actionPanel.status === "waiting" && actionPanel.invoice && (
-                  <div className="mt-8 flex justify-center">
-                    <div className="bg-[#0a1a14] p-5 rounded-3xl border border-[#4ff4c6]/40 shadow-inner">
-                    <QRCodeSVG
-                      value={`lightning:${actionPanel.invoice}`}
-                      size={320}
-                      bgColor="#ffffff"
-                      fgColor="#000000"
-                      level="L"
-                      includeMargin={true}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {actionPanel.invoice && (
-                  <div className="mt-6 font-mono bg-[#0a1a14] border border-[#4ff4c6]/30 rounded-2xl p-5 text-[#e8fff7] text-base leading-relaxed break-all flex items-start gap-3 shadow-inner">
-                    <span className="text-[#4ff4c6] select-none mt-px text-lg">➜</span>
-                    <span className="flex-1 font-light">{actionPanel.invoice}</span>
-                  </div>
-                )}
-
-                {actionPanel.status === "success" && (
-                  <div className="mt-6 font-mono bg-[#0a1a14] border border-[#4ff4c6]/30 rounded-2xl p-5 text-[#e8fff7] text-base leading-relaxed flex items-start gap-3 shadow-inner">
-                    <span className="text-[#4ff4c6] select-none mt-px text-lg">➜</span>
-                    <span className="flex-1 font-light">
-                      Payment Received ✓
-                    </span>
-                  </div>
-                )}
-
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(actionPanel.invoice || "");
-                    alert(" Lightning invoice copied to clipboard");
-                  }}
-                  className="mt-8 w-full py-4 bg-[#14251f] border border-[#4ff4c6]/40 hover:border-[#4ff4c6] rounded-3xl text-[#e8fff7] font-medium transition-colors"
-                >
-                  Copy Lightning Invoice
-                </button>
-              </>
-            )}
-
-            {/* MELT PANEL */}
-            {actionPanel?.type === "melt" && (
-              <>
-                <p className="font-mono text-sm text-[#4ff4c6] uppercase tracking-[4px]">
-                  {actionPanel.status === "success"
-                    ? "MELT SUCCESSFUL ✓"
-                    : actionPanel.status === "error"
-                    ? "MELT FAILED"
-                    : "PROCESSING MELT..."}
-                </p>
-                <div className="mt-6 font-mono bg-[#0a1a14] border border-[#4ff4c6]/30 rounded-2xl p-5 text-[#e8fff7] text-base leading-relaxed break-all flex items-start gap-3 shadow-inner">
-                  <span className="text-[#4ff4c6] select-none mt-px text-lg">➜</span>
-                  <span className="flex-1">{actionPanel.message}</span>
-                </div>
-              </>
-            )}
-
-            {/* SWAP SEND — QR Code Panel */}
-            {actionPanel?.type === "swapSend" && (
-              <>
-                <p className="font-mono text-sm text-[#4ff4c6] uppercase tracking-[4px]">
-                  {actionPanel.status === "waiting"
-                    ? "TOKEN GENERATED"
-                    : actionPanel.status === "success"
-                    ? "TOKEN READY ✓"
-                    : "ERROR"}
-                </p>
-
-                {actionPanel.status === "waiting" && actionPanel.token && (
-                  <div className="mt-8 flex justify-center">
-                    <div className="bg-[#0a1a14] p-5 rounded-3xl border border-[#4ff4c6]/40 shadow-inner">
-                    <QRCodeSVG
-                      value={actionPanel.token}
-                      size={320}
-                      bgColor="#ffffff"
-                      fgColor="#000000"
-                      level="L"
-                      includeMargin={true}
-                    />
-                    </div>
-                  </div>
-                )}
-
-                {actionPanel.token && (
-                  <div className="mt-6 font-mono bg-[#0a1a14] border border-[#4ff4c6]/30 rounded-2xl p-5 text-[#e8fff7] text-base leading-relaxed break-all flex items-start gap-3 shadow-inner">
-                    <span className="text-[#4ff4c6] select-none mt-px text-lg">➜</span>
-                    <span className="flex-1 font-light">{actionPanel.token}</span>
-                  </div>
-                )}
-
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(actionPanel.token || "");
-                    alert(" Cashu Token copied to clipboard");
-                  }}
-                  className="mt-8 w-full py-4 bg-[#14251f] border border-[#4ff4c6]/40 hover:border-[#4ff4c6] rounded-3xl text-[#e8fff7] font-medium transition-colors"
-                >
-                  Copy Cashu Token
-                </button>
-              </>
-            )}
-
-            {/* SWAP CLAIM PANEL */}
-            {actionPanel?.type === "swapClaim" && (
-              <>
-                <p className="font-mono text-sm text-[#4ff4c6] uppercase tracking-[4px]">
-                  {actionPanel.status === "success"
-                    ? "CLAIM SUCCESSFUL ✓"
-                    : actionPanel.status === "error"
-                    ? "CLAIM FAILED"
-                    : "CLAIMING TOKEN..."}
-                </p>
-                <div className="mt-6 font-mono bg-[#0a1a14] border border-[#4ff4c6]/30 rounded-2xl p-5 text-[#e8fff7] text-base leading-relaxed break-all flex items-start gap-3 shadow-inner">
-                  <span className="text-[#4ff4c6] select-none mt-px text-lg">➜</span>
-                  <span className="flex-1">{actionPanel.message}</span>
-                </div>
-              </>
-            )}
-
-            {/* Extra message */}
-            {actionPanel?.message && (
-              <p className="mt-6 text-center text-sm text-[#e8fff7]/80 font-light">
-                {actionPanel.message}
-              </p>
-            )}
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* 1. Mint Tokens — QR Code Panel */}
-          <div className="glass neon-glow rounded-3xl p-6">
-            <h2 className="text-[#4ff4c6] text-xl font-medium mb-4">Mint Tokens</h2>
-            <label className="text-sm text-[#e8fff7]/70 block mb-2">Amount (sat)</label>
-            <input
-              type="number"
-              name="mintAmount"
-              value={formData.mintAmount}
-              onChange={handleChange}
-              placeholder="1000"
-              className="w-full bg-[#14251f] border border-[#4ff4c6]/30 rounded-3xl px-6 py-4 text-[#e8fff7] outline-none mb-6"
-            />
-
-              <button
-              onClick={async () => {
-                const amount = parseInt(formData.mintAmount);
-                if (!amount || amount < 1) return alert("Please enter a valid amount");
-
-                setActionPanel({ type: "mint", status: "waiting" });
-
-                await handleMint(amount);
-                
-                // Clear input after success
-                setFormData((prev) => ({ ...prev, mintAmount: "" }));
-              }}
-              disabled={isProcessing || !walletReady}
-              className="w-full py-4 bg-[#4ff4c6] text-[#0f1c18] font-medium rounded-3xl hover:brightness-110 disabled:opacity-50"
-            >
-              Mint
-            </button>
-          </div>
-
-{/* 2. Melt Tokens — with Camera Scanner (mobile friendly) */}
-          <div className="glass neon-glow rounded-3xl p-6">
-            <h2 className="text-[#4ff4c6] text-xl font-medium mb-4">Melt Tokens</h2>
-            
-            <label className="text-sm text-[#e8fff7]/70 block mb-2">Bolt11 Invoice</label>
-            
-            <div className="flex gap-3">
-              <input
-                type="text"
-                name="meltInvoice"
-                value={formData.meltInvoice}
-                onChange={handleChange}
-                placeholder="lnbc1..."
-                className="flex-1 bg-[#14251f] border border-[#4ff4c6]/30 rounded-3xl px-4 py-4 text-[#e8fff7] outline-none text-sm"
-              />
-              
-              <button
-                onClick={() => {
-                  setScannerTarget("melt");
-                  setShowScanner(true);
-                }}
-                className="px-5 py-4 bg-[#14251f] border border-[#4ff4c6]/40 hover:border-[#4ff4c6] rounded-3xl text-[#4ff4c6] font-medium transition-colors flex items-center gap-2 whitespace-nowrap"
-              >
-                Scan
-              </button>
-            </div>
-
-              <button
-              onClick={async () => {
-                if (!formData.meltInvoice) return alert("Please enter a Bolt11 invoice");
-                
-                setActionPanel({ type: "melt", status: "waiting", message: "Processing melt..." });
-                await handleMelt(formData.meltInvoice);
-                
-                // Clear input after success
-                setFormData((prev) => ({ ...prev, meltInvoice: "" }));
-              }}
-              disabled={isProcessing || !walletReady}
-              className="mt-6 w-full py-4 bg-[#4ff4c6] text-[#0f1c18] font-medium rounded-3xl hover:brightness-110 disabled:opacity-50"
-            >
-              Melt
-            </button>
-          </div>
-
-          {/* 3. Swap → Send — generates QR code */}
-          <div className="glass neon-glow rounded-3xl p-6">
-            <h2 className="text-[#4ff4c6] text-xl font-medium mb-4">Swap → Send</h2>
-            <label className="text-sm text-[#e8fff7]/70 block mb-2">Amount to send (sat)</label>
-            <input
-              type="number"
-              name="swapAmount"
-              value={formData.swapAmount}
-              onChange={handleChange}
-              placeholder="500"
-              className="w-full bg-[#14251f] border border-[#4ff4c6]/30 rounded-3xl px-6 py-4 text-[#e8fff7] outline-none mb-6"
-            />
-
-              <button
-              onClick={async () => {
-                const amount = parseInt(formData.swapAmount);
-                if (!amount || amount < 1) return alert("Please enter a valid amount");
-
-                setActionPanel({ type: "swapSend", status: "waiting", token: null });
-                await handleSwapSend(amount);
-                
-                // Clear input after success
-                setFormData((prev) => ({ ...prev, swapAmount: "" }));
-              }}
-              disabled={isProcessing || !walletReady}
-              className="w-full py-4 bg-[#4ff4c6] text-[#0f1c18] font-medium rounded-3xl hover:brightness-110 disabled:opacity-50"
-            >
-              Create Token (Send)
-            </button>
-          </div>
-
-          {/* 4. Swap → Claim — with camera scan (mobile friendly) */}
-          <div className="glass neon-glow rounded-3xl p-6">
-            <h2 className="text-[#4ff4c6] text-xl font-medium mb-4">Swap → Claim</h2>
-            <label className="text-sm text-[#e8fff7]/70 block mb-2">Cashu Token</label>
-            
-            <div className="flex gap-3">
-              <input
-                type="text"
-                name="swapToken"
-                value={formData.swapToken}
-                onChange={handleChange}
-                placeholder="cashuB..."
-                className="flex-1 bg-[#14251f] border border-[#4ff4c6]/30 rounded-3xl px-4 py-4 text-[#e8fff7] outline-none text-sm"
-              />
-              
-              <button
-                onClick={() => {
-                  setScannerTarget("swapClaim");
-                  setShowScanner(true);
-                }}
-                className="px-5 py-4 bg-[#14251f] border border-[#4ff4c6]/40 hover:border-[#4ff4c6] rounded-3xl text-[#4ff4c6] font-medium transition-colors flex items-center gap-2 whitespace-nowrap"
-              >
-                Scan
-              </button>
-            </div>
-
-
-            <button
-              onClick={async () => {
-                if (!formData.swapToken) return alert("Please enter or scan a Cashu token");
-                
-                setActionPanel({ type: "swapClaim", status: "waiting", message: "Claiming token..." });
-                await handleSwapClaim(formData.swapToken);
-                
-                // Clear input after success
-                setFormData((prev) => ({ ...prev, swapToken: "" }));
-              }}
-              disabled={isProcessing || !walletReady}
-              className="mt-6 w-full py-4 bg-[#4ff4c6] text-[#0f1c18] font-medium rounded-3xl hover:brightness-110 disabled:opacity-50"
-            >
-              Claim Token
-            </button>
-
-          </div>
-        </div>
+        <main className="flex flex-1 flex-col items-center justify-center gap-10 py-8">
+          <BalanceCore balance={balance || 0} mint={activeMint} connected={walletReady && !!activeMint} onMints={() => setPanel({ k: "mints" })} />
+          <Orbs disabled={false} onPick={openFlow} />
+        </main>
       </div>
 
-      <Footer onOpenSecurity={() => setShowSecurity(!showSecurity)} />
-
-      {showSecurity && (
-        <div ref={securityRef}>
-          <SecurityConfig
-            currentLevel={securityLevel}
-            onUpgrade={(action) => {
-              setShowSecurity(false);
-              if (action === "restore") {
-                setRestoreMode(true);
-                setShowSeedReveal(true);
-              } else if (action === 2) {
-                setRestoreMode(false);
-                setShowSeedReveal(true);
-              } else if (action === 1) {
-                setSecurityLevel(1);
-              }
-            }}
-          />
+      {toast && (
+        <div className="anim-rise pointer-events-none fixed inset-x-0 top-[calc(max(1rem,env(safe-area-inset-top))+4.5rem)] z-[80] flex justify-center px-4">
+          <p
+            className={`glass max-w-md rounded-full px-5 py-3 text-sm ${toast.tone === "error" ? "text-red-200" : "text-[#a3ffe0]"}`}
+            role="status"
+          >
+            {toast.text}
+          </p>
         </div>
       )}
 
-      {/*Seed Modal*/} 
-      {showSeedReveal && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-xl">
-          <div className="bg-[#1e3a32] border border-[#4ff4c6]/40 rounded-3xl p-8 max-w-md w-full mx-4">
-            <h3 className="text-[#4ff4c6] text-xl font-medium mb-2">
-              {restoreMode ? "Replace local phrase" : "Local phrase"}
-            </h3>
-            <p className="text-[#e8fff7]/70 text-sm mb-6">
-              {restoreMode
-                ? "This only replaces the phrase saved in this browser. It does not restore tokens."
-                : "This phrase does not restore your balance. Your tokens are the proofs saved in this browser."}
-            </p>
-
-            {!restoreMode && mnemonic && (
-              <div className="bg-[#14251f] p-6 rounded-2xl text-[#e8fff7] font-mono text-center leading-relaxed mb-6 break-all">
-                {mnemonic}
-              </div>
-            )}
-
-            {restoreMode && (
-              <textarea
-                placeholder="Paste your 12-word seed phrase here..."
-                className="w-full bg-[#14251f] border border-[#4ff4c6]/30 rounded-3xl p-6 text-[#e8fff7] outline-none h-28 resize-none mb-6"
-                onChange={(e) => setTempSeed(e.target.value)}
-              />
-            )}
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setShowSeedReveal(false);
-                  setRestoreMode(false);
-                }}
-                className="flex-1 py-4 rounded-3xl border border-white/30 text-[#e8fff7] hover:bg-white/10"
-              >
-                Close
-              </button>
-
-              {restoreMode ? (
-                <button
-                  onClick={async () => {
-                    const success = await restoreFromSeed(tempSeed);
-                    if (success) {
-                      alert("Phrase replaced in this browser. This did not restore tokens.");
-                      setShowSeedReveal(false);
-                      setRestoreMode(false);
-                      setTempSeed("");
-                    }
-                  }}
-                  className="flex-1 py-4 rounded-3xl bg-[#4ff4c6] text-[#0f1c18] font-medium"
-                >
-                  Restore Wallet
-                </button>
-              ) : (
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(mnemonic);
-                    alert(" Copied to clipboard");
-                  }}
-                  className="flex-1 py-4 rounded-3xl bg-[#4ff4c6] text-[#0f1c18] font-medium"
-                >
-                  Copy Seed
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+      {panel?.k === "flow" && (
+        <FlowSheet
+          type={panel.type}
+          balance={balance || 0}
+          dataOutput={dataOutput}
+          isProcessing={isProcessing}
+          run={run}
+          onScan={(apply) => setScanApply(() => apply)}
+          onClose={close}
+        />
       )}
-
-            {/* QR SCANNER MODAL */}
-      {showScanner && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-xl">
-          <div className="bg-[#1e3a32] border border-[#4ff4c6]/40 rounded-3xl p-6 max-w-lg w-full mx-4">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-[#4ff4c6] text-xl font-medium">Scan Lightning Invoice</h3>
-              <button
-                onClick={() => setShowScanner(false)}
-                className="text-4xl text-[#4ff4c6] hover:text-red-400 leading-none"
-              >
-                ×
-              </button>
-            </div>
-
-            <div id="qr-reader" className="rounded-2xl overflow-hidden border border-[#4ff4c6]/30"></div>
-
-            <p className="text-center text-[#e8fff7]/60 text-sm mt-4">
-              Point your camera at a Lightning QR code
-            </p>
-
-            <button
-              onClick={() => setShowScanner(false)}
-              className="mt-6 w-full py-4 bg-[#14251f] border border-[#4ff4c6]/40 hover:border-[#4ff4c6] rounded-3xl text-[#e8fff7]"
-            >
-              Close Scanner
-            </button>
-          </div>
-        </div>
+      {panel?.k === "mints" && (
+        <MintsPanel
+          activeMint={activeMint}
+          connected={walletReady}
+          proofsByMint={proofsByMint}
+          note={panel.note}
+          onConnect={connect}
+          onClose={close}
+        />
       )}
-
-{/* === MANDATORY WELCOME MODAL (no more flash) === */}
-      <WalletWelcomeModal
-        isOpen={showWelcomeModal}
-        onAccept={() => setShowWelcomeModal(false)}
-      />
-
-      {/* === TRANSACTION HISTORY MODAL === */}
-      {showTransactionHistory && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-xl">
-          <div className="bg-[#1e3a32] border border-[#4ff4c6]/40 rounded-3xl p-8 max-w-2xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col">
-            
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-3">
-                <Image src="/clock.png" alt="History" width={40} height={40} className="object-contain" />
-                <h2 className="text-2xl font-medium text-[#e8fff7]">Transaction History</h2>
-              </div>
-              <button
-                onClick={() => setShowTransactionHistory(false)}
-                className="text-4xl text-[#4ff4c6] hover:text-red-400 leading-none"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-3 pr-2">
-              {sentTokens.length > 0 && (
-                <details className="bg-[#14251f] p-4 rounded-2xl">
-                  <summary className="cursor-pointer text-[#4ff4c6]">Sent tokens ({sentTokens.length})</summary>
-                  <p className="text-xs text-[#e8fff7]/60 mt-2">
-                    Copies of every token you created. If a receiver never claimed one, you can claim it back.
-                  </p>
-                  {sentTokens.map((op) => (
-                    <div key={op.id} className="mt-3 flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm text-[#e8fff7]">{op.amount} sat</p>
-                        <p className="text-xs text-[#e8fff7]/60">{new Date(op.createdAt).toLocaleString()}</p>
-                      </div>
-                      <button
-                        onClick={() => navigator.clipboard.writeText(op.token || "")}
-                        className="px-4 py-2 text-xs border border-[#4ff4c6]/40 rounded-3xl text-[#e8fff7] shrink-0"
-                      >
-                        Copy token
-                      </button>
-                    </div>
-                  ))}
-                </details>
-              )}
-              {transactions.length === 0 ? (
-                <div className="text-center py-16 text-[#e8fff7]/40">
-                  <p className="text-7xl mb-6">🕒</p>
-                  <p className="text-xl">No transactions yet</p>
-                </div>
-              ) : (
-                transactions.map((tx) => (
-                  <div key={tx.id} className="bg-[#14251f] p-4 rounded-2xl flex justify-between items-center">
-                    <div>
-                      <p className="text-[#e8fff7] capitalize">{tx.type}</p>
-                      <p className="text-xs text-[#e8fff7]/60">{tx.timestamp}</p>
-                      <p className="text-xs text-[#4ff4c6]/80 mt-1">
-                        {tx.mint ? tx.mint.replace("https://", "").replace(/\/$/, "") : ""}
-                      </p>
-                    </div>
-                    <p className={`font-medium text-lg ${tx.amount > 0 ? "text-[#4ff4c6]" : "text-red-400"}`}>
-                      {tx.amount > 0 ? "+" : ""}{tx.amount} sat
-                    </p>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <button
-              onClick={() => setShowTransactionHistory(false)}
-              className="mt-6 w-full py-4 bg-[#14251f] border border-[#4ff4c6]/40 hover:border-[#4ff4c6] rounded-3xl text-[#e8fff7]"
-            >
-              Close
-            </button>
-          </div>
-        </div>
+      {panel?.k === "vault" && (
+        <SeedVault
+          mnemonic={mnemonic}
+          backedUp={securityLevel >= 2}
+          onBackedUp={() => setSecurityLevel(2)}
+          onRestore={restoreFromSeed}
+          onClose={close}
+        />
       )}
-
-
+      {panel?.k === "history" && <HistoryPanel transactions={transactions} onClose={close} />}
+      {panel?.k === "menu" && <MenuPanel onClose={close} />}
+      {scanApply && <Scanner onResult={scanApply} onClose={closeScanner} />}
+      {welcome && <WelcomeModal onAccept={() => setWelcome(false)} />}
     </>
   );
 }

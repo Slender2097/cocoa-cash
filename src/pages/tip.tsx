@@ -252,7 +252,7 @@ export default function TipPage() {
       `}</style>
 
       <div ref={boxRef} className="w-full max-w-sm mx-auto p-2">
-        <div className="glass rounded-3xl p-5 text-[#e8fff7]">
+        <div className="glass glass-solid rounded-3xl p-5 text-[#e8fff7]">
           {!cfg ? null : cfg.error ? (
             <p className="text-sm text-red-300">Tip button not configured: {cfg.error}.</p>
           ) : view === "done" ? (
