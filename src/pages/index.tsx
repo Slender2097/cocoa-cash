@@ -133,10 +133,10 @@ export default function Home() {
             <span className="hidden text-lg font-light tracking-[0.2em] text-[#e8fff7]/80 sm:inline">cocoa</span>
           </button>
           <div className="flex items-center gap-1.5 sm:gap-2">
-            <Glyph src="/palenque-logo2.png" label="Mints" onClick={() => setPanel({ k: "mints" })} />
-            <Glyph src="/clock.png" label="History" onClick={() => setPanel({ k: "history" })} />
+            <Glyph name="mints" label="Mints" onClick={() => setPanel({ k: "mints" })} />
+            <Glyph name="history" label="History" onClick={() => setPanel({ k: "history" })} />
             <span className="relative">
-              <Glyph src="/security-logo.png" label="Seed vault" onClick={() => setPanel({ k: "vault" })} />
+              <Glyph name="vault" label="Seed vault" onClick={() => setPanel({ k: "vault" })} />
               {securityLevel < 2 && <span className="pointer-events-none absolute right-0 top-0 h-2.5 w-2.5 rounded-full bg-amber-300 shadow-[0_0_8px_#fcd34d]" />}
             </span>
             <TipsGlyph />

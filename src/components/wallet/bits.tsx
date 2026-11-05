@@ -1,14 +1,14 @@
 // src/components/wallet/bits.tsx
-// Small shared pieces: glyph buttons (existing artwork), QR plate, copy button.
+// Small shared pieces: header glyph buttons, QR plate, copy button.
 // MIT License
 
 import React, { useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
+import { GlyphIcon, type GlyphName } from "./GlyphIcons";
 
-/** Round button showing one of the existing glyph images (wide PNGs, art centered). */
-export function Glyph({ src, label, onClick, size = 52 }: { src: string; label: string; onClick: () => void; size?: number }) {
+/** Round header button around one of the line glyphs in GlyphIcons. */
+export function Glyph({ name, label, onClick, size = 52 }: { name: GlyphName; label: string; onClick: () => void; size?: number }) {
   return (
     <button
       onClick={onClick}
@@ -17,22 +17,24 @@ export function Glyph({ src, label, onClick, size = 52 }: { src: string; label: 
       className={GLYPH_CLS}
       style={{ width: size, height: size }}
     >
-      <Image src={src} alt="" fill sizes={`${size * 2}px`} className="scale-[1.55] object-cover drop-shadow-[0_0_8px_rgba(79,244,198,0.6)]" />
+      <GlyphIcon name={name} size={glyphSize(size)} />
     </button>
   );
 }
 
 const GLYPH_CLS =
-  "relative grid shrink-0 place-items-center overflow-hidden rounded-full border border-[#4ff4c6]/15 bg-[#07110d]/40 transition hover:border-[#4ff4c6]/60 hover:shadow-[0_0_24px_-6px_#4ff4c6] active:scale-95";
+  "relative grid shrink-0 place-items-center rounded-full border border-[#4ff4c6]/15 bg-[#07110d]/40 transition hover:border-[#4ff4c6]/60 hover:shadow-[0_0_24px_-6px_#4ff4c6] active:scale-95";
 
-/** Header link to the tip board (/creator), drawn to match the glyph images. */
+// The glyph box is 70% of the button, so the middle 26 units the glyphs are
+// drawn in span about 57% of the circle: at 52px every stroke stays 8px or
+// more clear of the frame.
+const glyphSize = (size: number) => Math.round(size * 0.7);
+
+/** Header link to the tip board (/creator), drawn in the same glyph family. */
 export function TipsGlyph({ size = 52 }: { size?: number }) {
   return (
     <Link href="/creator" aria-label="Tip board" title="Tip board" className={GLYPH_CLS} style={{ width: size, height: size }}>
-      <svg viewBox="0 0 24 24" className="h-8 w-8 text-[#4ff4c6] drop-shadow-[0_0_8px_rgba(79,244,198,0.7)]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round">
-        <path d="M12 20.5s-7.5-4.4-7.5-10.1A4.2 4.2 0 0 1 12 7.6a4.2 4.2 0 0 1 7.5 2.8c0 5.7-7.5 10.1-7.5 10.1z" />
-        <path d="m12.8 9.5-2.3 3.4h2.6l-1 3" />
-      </svg>
+      <GlyphIcon name="tips" size={glyphSize(size)} />
     </Link>
   );
 }
