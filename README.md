@@ -1,40 +1,84 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/pages/api-reference/create-next-app).
+# cocoa.cash
 
-## Getting Started
+A non-custodial Cashu wallet that runs in your browser. Your proofs are kept in this browser's `localStorage`, and the server never holds your balance. The full wallet at `/` does Mint, Melt, Create Token (Send) and Claim Token.
 
-First, run the development server:
+## Tip button (embed)
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+You can add a Cashu tip or donate button to any web page. Visitors pay with Lightning or a Cashu token, and the sats land in **your** browser wallet.
+
+### 1. Create your button (one minute, no account)
+
+Open **https://cocoa.cash/creator** and set:
+
+- **Mint:** one mint URL, or a short list separated by commas. You'll see a warning if a mint isn't in the built-in list.
+- **Amount:** a fixed number of sats, or leave it empty so visitors choose.
+- **Passphrase:** locks the board in this browser. cocoa.cash never sees it.
+
+The page creates a receiving key in your browser and gives you the snippet.
+
+### 2. Paste one of these on your site
+
+```html
+<script src="https://cocoa.cash/tip.js"
+        data-mint="https://mint.example.com"
+        data-amount="21"
+        data-npub="npub1..."></script>
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+You can also use a plain link or iframe:
 
-You can start editing the page by modifying `pages/index.js`. The page auto-updates as you edit the file.
+```html
+<iframe src="https://cocoa.cash/tip?mint=https://mint.example.com&amount=21&npub=npub1..."
+        width="360" height="560" style="border:0" allow="clipboard-write; camera"></iframe>
+```
 
-[API routes](https://nextjs.org/docs/pages/building-your-application/routing/api-routes) can be accessed on [http://localhost:3000/api/hello](http://localhost:3000/api/hello). This endpoint can be edited in `pages/api/hello.js`.
+| Param | Required | Meaning |
+|---|---|---|
+| `mint` | yes | Mint URL, or several separated by commas (allowlist). The first one is used for Lightning. |
+| `amount` | yes | Sats, or `any` |
+| `npub` | yes | Your receiving key from `/creator` |
+| `label` | no | Button text: `Tip` (default) or `Donate` |
+| `relays` | no | Comma-separated `wss://` relays (defaults: damus, nos.lol, primal) |
 
-The `pages/api` directory is mapped to `/api/*`. Files in this directory are treated as [API routes](https://nextjs.org/docs/pages/building-your-application/routing/api-routes) instead of React pages.
+### 3. Collect tips
 
-This project uses [`next/font`](https://nextjs.org/docs/pages/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Open `/creator` in the **same browser** and unlock it. The board checks for new tips every minute while it's open. It shows your balance per mint, received tips (amount, time, note), anything pending or failed, and your mint settings. The sats are ordinary proofs in the full wallet, so you can melt or send them from `/`.
 
-## Learn More
+**Back up your receiving key.** Use "Show receiving key" on the board. You don't need a backup to start receiving, but without one, tips that are still in flight can't be claimed if this browser's data is lost. You can restore the key on a new browser during setup.
 
-To learn more about Next.js, take a look at the following resources:
+### How it works (protocol)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn-pages-router) - an interactive Next.js tutorial.
+Nothing here is custom. Everything is defined by a Cashu NUT or a Nostr NIP:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- **Delivery: NUT-18 payment requests over the Nostr transport.** The visitor's browser sends a NUT-18 payload `{mint, unit, proofs, memo}` as a NIP-17 private DM (NIP-59 gift wrap, NIP-44 encryption) to your `npub`, using a throwaway sender key. The widget also shows a `creqA` NUT-18 request, so any Cashu wallet that supports NUT-18 can pay directly.
+- **Lightning:** a NUT-04 bolt11 mint quote at your mint. The new outputs are locked to your key with NUT-11 P2PK, so not even the visitor can spend them on the way to you. The blinding data is saved before the mint call. If the reply is lost, the same outputs are recovered with NUT-09 restore.
+- **Pasted or scanned token:** forwarded unchanged as a NUT-18 payload. NUT-07 is used only to reject a token that is already spent.
+- **Finality:** a tip counts as received **only** when your browser completes a NUT-03 swap of the delivered proofs and unblinds the new outputs. The outputs are saved before the swap request. If the reply is lost, NUT-07 shows the inputs are spent and NUT-09 restore recovers the outputs. If NUT-09 returns nothing, someone else spent the token first, and it's marked failed. A NUT-07 state is never treated as a payment.
+- **Custody:** cocoa.cash has no server component for tips. The relays only see encrypted gift wraps. The mint is the only custodian, as with any Cashu mint.
 
-## Deploy on Vercel
+The tip code is in `src/lib/tip/`, `src/pages/tip.tsx`, `src/pages/creator.tsx` and `public/tip.js`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Wallet safety (all operations)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/pages/building-your-application/deploying) for more details.
+The full wallet and the tip board share the same write-ahead journal in `src/lib/cashu/journal.ts`:
+
+| Operation | NUTs | Written before the mint call | Recovery after a lost reply |
+|---|---|---|---|
+| Mint | NUT-04 | quote, then blinded outputs | NUT-09 restore of those outputs |
+| Melt | NUT-05, NUT-08 | inputs (reserved, not spendable) + change outputs | NUT-05 quote state: PAID → NUT-09 change, UNPAID → inputs back after NUT-07 shows them UNSPENT, PENDING → wait |
+| Send (create token) | NUT-03 | inputs + keep/send outputs | NUT-09 restore. The token is saved in History, so closing the tab can't lose it |
+| Claim token / tip | NUT-03 (+ NUT-11) | token inputs + outputs | NUT-07 SPENT → NUT-09 restore. If NUT-09 returns nothing, the token was spent by someone else and is marked failed |
+
+Open operations resume automatically when the wallet connects. Proofs are stored in `localStorage` and amounts are plain numbers. cashu-ts v4 `Amount` objects are converted in one place: `src/lib/cashu/storage.ts`.
+
+## Development
+
+TypeScript (strict), Next.js, Tailwind, `@cashu/cashu-ts` v4.
+
+```bash
+npm install
+npm run dev
+npm run typecheck && npm run lint && npm run build
+```
+
+Open http://localhost:3000. The tip widget is at `/tip` and the creator board is at `/creator`.

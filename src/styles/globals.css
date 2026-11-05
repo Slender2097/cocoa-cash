@@ -1,237 +1,173 @@
-/*@tailwind base;
+@tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* cocoa.cash: one palette, a few glow primitives, nothing else.
+   space #14251f · surface #1e3a32 · neon #4ff4c6 · pulse #a3ffe0 · text #e8fff7 */
 
 :root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
-  --background-end-rgb: 255, 255, 255;
+  --space: #14251f;
+  --void: #07110d;
+  --surface: #1e3a32;
+  --neon: #4ff4c6;
+  --pulse: #a3ffe0;
+  --text: #e8fff7;
 }
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
-    --background-end-rgb: 0, 0, 0;
-  }
-}
-
-body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
-}
-
-main {
-  font-family: Arial, sans-serif;
-  margin: 20px;
-  display: flex;
-  justify-content: space-around;
-  align-items: center;
-  padding: 20px;
-}
-
-.cashu-operations-container {
-  max-width: 600px;
-}
-
-.section {
-  margin-bottom: 20px;
-  background-color: rgb(2, 58, 2);
-  padding: 15px;
-}
-
-.section h2 {
-  margin-bottom: 10px;
-  font-weight: bold;
-  font-size: large;
-}
-
-.section label {
-  display: block;
-  margin-bottom: 5px;
-  text-decoration: underline;
-}
-
-.section input {
-  width: 100%;
-  padding: 8px;
-  margin-bottom: 10px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  color: black;
-}
-
-.section button {
-  padding: 10px 15px;
-  border: none;
-  background-color: #4caf50;
-  color: white;
-}
-
-.data-display-container {
-  background-color: rgb(2, 58, 2);
-  padding: 20px;
-  border-radius: 8px;
-  box-shadow: 0 0 10px rgba(110, 107, 107, 0.1);
-  width: 400px;
-  height: auto;
-  overflow-y: auto;
-}
-
-.data-display-container h2 {
-  margin-top: 0;
-}
-
-.data-output {
-  background-color: #f8f9fa;
-  color: black;
-  padding: 10px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  white-space: pre-wrap;
-  height: 80%;
-}
-
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
-}
-
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
 
 @layer base {
-  body {
-    @apply bg-[#14251f] text-[#e8fff7] font-sans;
-    background: radial-gradient(circle at 50% 30%, #1e3a32 0%, #14251f 70%);
+  html {
+    background: var(--void);
   }
-
-  main {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  body {
+    @apply text-[#e8fff7] antialiased;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    background: radial-gradient(120% 80% at 50% 20%, #1e3a32 0%, #14251f 45%, #07110d 100%) fixed;
+    min-height: 100dvh;
+  }
+  ::selection {
+    background: rgba(79, 244, 198, 0.35);
   }
 }
 
 @layer components {
+  /* Floating holographic panel. Also used by /tip and /creator. */
   .glass {
-    background: rgba(30, 58, 50, 0.75);
-    backdrop-filter: blur(28px);
-    border: 1px solid rgba(79, 244, 198, 0.35);
-    box-shadow: 0 0 40px -15px rgb(79 244 198);
+    position: relative;
+    background:
+      linear-gradient(160deg, rgba(163, 255, 224, 0.07) 0%, rgba(163, 255, 224, 0) 35%),
+      rgba(22, 44, 37, 0.72);
+    backdrop-filter: blur(22px) saturate(140%);
+    -webkit-backdrop-filter: blur(22px) saturate(140%);
+    border: 1px solid rgba(79, 244, 198, 0.22);
+    box-shadow:
+      inset 0 1px 0 rgba(163, 255, 224, 0.12),
+      0 30px 80px -30px rgba(0, 0, 0, 0.8),
+      0 0 60px -30px rgba(79, 244, 198, 0.45);
   }
 
-  .card {
-    @apply glass rounded-3xl p-8 transition-all duration-300;
+  /* Same panel on an opaque base, for the tip embed (host pages may be white). */
+  .glass-solid {
+    background:
+      linear-gradient(160deg, rgba(163, 255, 224, 0.08) 0%, rgba(163, 255, 224, 0) 35%),
+      #183029;
+    box-shadow: inset 0 1px 0 rgba(163, 255, 224, 0.12);
   }
 
-  .card:hover {
-    box-shadow: 0 0 50px -10px rgb(79 244 198);
-    transform: translateY(-4px);
-  }
-
-  // PREMIUM HOLOGRAPHIC BUTTONS 
-  .button {
-    @apply font-semibold py-4 px-8 rounded-3xl w-full text-[#0f1c18] transition-all duration-200;
+  /* Big primary action. */
+  .btn-neon {
+    @apply w-full rounded-full py-4 px-6 text-lg font-semibold text-[#06120e] transition active:scale-[0.97] disabled:opacity-40 disabled:active:scale-100;
     background: linear-gradient(90deg, #4ff4c6, #a3ffe0);
-    box-shadow: 0 0 35px -5px rgb(163 255 224);
+    box-shadow: 0 0 40px -10px rgba(163, 255, 224, 0.9);
   }
-
-  .button:hover {
-    box-shadow: 0 0 55px -5px rgb(163 255 224);
-    transform: translateY(-2px) scale(1.03);
-  }
-
-  .button:active {
-    transform: scale(0.97);
-  }
-
-  // READABLE INPUTS - BLACK TEXT 
-  .input {
-    @apply w-full bg-[#f0f7f4] border border-[#4ff4c6]/40 focus:border-[#4ff4c6] 
-           rounded-3xl px-6 py-5 text-black placeholder:text-[#1e3a32]/60 
-           focus:outline-none transition-all;
-  }
-}*/
-
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-@layer base {
-  body {
-    @apply bg-[#14251f] text-[#e8fff7] font-sans;
-    background: radial-gradient(circle at center, #1e3a32 0%, #14251f 70%);
-  }
-}
-
-@layer components {
-  .glass {                     /* Dark top area (Balance + status) */
-    background: rgba(30, 58, 50, 0.85);
-    backdrop-filter: blur(24px);
+  .btn-ghost {
+    @apply rounded-full py-3 px-5 text-base text-[#e8fff7] transition active:scale-[0.97];
     border: 1px solid rgba(79, 244, 198, 0.35);
-    box-shadow: 0 0 40px -15px rgb(79 244 198);
+    background: rgba(7, 17, 13, 0.4);
+  }
+  .btn-ghost:hover {
+    border-color: rgba(79, 244, 198, 0.8);
   }
 
-  .light-card {                /* Lighter operation cards */
-    background: rgba(30, 58, 50, 0.45);
-    backdrop-filter: blur(20px);
-    border: 1px solid rgba(79, 244, 198, 0.25);
-    box-shadow: 0 0 30px -12px rgb(79 244 198);
+  .field {
+    @apply w-full rounded-2xl px-5 py-4 text-base text-[#e8fff7] outline-none transition placeholder:text-[#e8fff7]/30;
+    background: rgba(7, 17, 13, 0.65);
+    border: 1px solid rgba(79, 244, 198, 0.22);
+  }
+  .field:focus {
+    border-color: rgba(79, 244, 198, 0.8);
+    box-shadow: 0 0 0 4px rgba(79, 244, 198, 0.12);
   }
 
-  .light-card:hover {
-    background: rgba(30, 58, 50, 0.55);
-    box-shadow: 0 0 40px -10px rgb(79 244 198);
+  .readout {
+    @apply rounded-2xl p-4 font-mono text-xs leading-relaxed break-all text-[#e8fff7]/80;
+    background: rgba(7, 17, 13, 0.65);
+    border: 1px solid rgba(79, 244, 198, 0.15);
   }
 
-  .button {
-    @apply bg-[#4ff4c6] hover:bg-[#a3ffe0] text-[#0f1c18] font-semibold 
-           py-4 px-6 rounded-3xl w-full transition-all active:scale-95;
+  .glow-text {
+    text-shadow: 0 0 18px rgba(79, 244, 198, 0.75), 0 0 48px rgba(79, 244, 198, 0.35);
   }
+}
 
-  .input {
-    @apply w-full bg-[#f0f7f4] border border-[#4ff4c6]/40 focus:border-[#4ff4c6] 
-           rounded-3xl px-6 py-5 text-black placeholder:text-[#050505]/60 
-           focus:outline-none transition-all;
+/* ---- motion (all disabled for reduced motion) ---------------------------- */
+@keyframes spin-slow {
+  to {
+    transform: rotate(360deg);
   }
-
-  /* Nixie Tube Effect */
-.nixie-display {
-  text-shadow: 
-    0 0 10px #4ff4c6,
-    0 0 20px #4ff4c6,
-    0 0 40px #4ff4c6,
-    0 0 60px #a3ffe0;
-  font-family: "Courier New", monospace;
-  letter-spacing: -6px;
+}
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.04);
+  }
+}
+@keyframes trace {
+  to {
+    stroke-dashoffset: -400;
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+.anim-spin-slow {
+  animation: spin-slow 60s linear infinite;
+}
+.anim-spin-rev {
+  animation: spin-slow 90s linear infinite reverse;
+}
+.anim-breathe {
+  animation: breathe 6s ease-in-out infinite;
+}
+.anim-trace {
+  stroke-dasharray: 4 196;
+  animation: trace 9s linear infinite;
+}
+.anim-rise {
+  animation: rise 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.anim-fade {
+  animation: fade 0.25s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .anim-spin-slow,
+  .anim-spin-rev,
+  .anim-breathe,
+  .anim-trace,
+  .anim-rise,
+  .anim-fade {
+    animation: none;
+  }
 }
 
-@keyframes nixie-flicker {
-  0%, 100% { opacity: 1; }
-  42% { opacity: 1; }
-  44% { opacity: 0.85; }
-  46% { opacity: 1; }
-  48% { opacity: 0.92; }
+/* html5-qrcode ships light-theme controls; tint them. */
+#qr-reader {
+  border: none !important;
+  color: #e8fff7;
 }
-
-.animate-nixie-flicker {
-  animation: nixie-flicker 0.8s linear;
+#qr-reader button {
+  @apply btn-ghost;
+  margin: 6px;
 }
-
-.nixie-display {
-  text-shadow: 
-    0 0 12px #4ff4c6,
-    0 0 25px #4ff4c6,
-    0 0 40px #a3ffe0;
-  font-family: "Courier New", monospace;
-  letter-spacing: -4px;
+#qr-reader img {
+  display: none;
 }
+#qr-reader a {
+  color: #4ff4c6;
 }
-
-

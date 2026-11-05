@@ -1,0 +1,246 @@
+// src/hooks/useCashu.ts
+// MIT License
+// Copyright (c) 2026 Jose2097
+//
+// Full-wallet actions (Mint, Melt, Send, Claim) for the cocoa.cash home page.
+// Every action goes through the write-ahead journal in src/lib/cashu/journal.ts:
+// blinding data and spent inputs are persisted before each mint call, and lost
+// replies are recovered with NUT-09. This replaces the old in-memory flows,
+// which could lose funds on a dropped reply or a closed tab.
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import useProofStorage from "./useProofStorage";
+import type { ProofStorage } from "./useProofStorage";
+import { getWallet, errText } from "@/lib/cashu/outputs";
+import { readProofs, walletMintKey, normalizeMint } from "@/lib/cashu/storage";
+import {
+  startMint,
+  startMelt,
+  startSend,
+  startReceive,
+  recoverOpen,
+  openOps,
+  getOp,
+  importLegacyPendingMints,
+} from "@/lib/cashu/journal";
+import type { MintOp } from "@/lib/cashu/journal";
+
+export type DataOutput = {
+  status?: string;
+  error?: string;
+  details?: string;
+  message?: string;
+  success?: string;
+  type?: "mint" | "melt" | "swap-send" | "swap-claim";
+  amount?: number;
+  invoice?: string;
+  quoteId?: string;
+  token?: string;
+  keysId?: string;
+  receivedProofs?: number;
+  receivedCount?: number;
+  preimage?: string;
+  feeReserve?: number;
+  changeReceived?: number;
+  estimatedNewBalance?: number;
+} | null;
+
+export type UseCashu = {
+  walletReady: boolean;
+  isProcessing: boolean;
+  dataOutput: DataOutput;
+  balance: number;
+  activeMint: string;
+  hydrated: boolean;
+  handleSetMint: (url: string, opts?: { silent?: boolean }) => Promise<void>;
+  handleMint: (amount: string | number) => Promise<void>;
+  handleMelt: (invoice: string) => Promise<void>;
+  handleSwapSend: (amount: string | number) => Promise<void>;
+  handleSwapClaim: (token: string) => Promise<void>;
+  setDataOutput: (d: DataOutput) => void;
+  /** The single proof-storage instance. Pages must use this one. */
+  storage: ProofStorage;
+};
+
+export default function useCashu(): UseCashu {
+  const storage = useProofStorage();
+  const { balance, activeMint, switchMint, hydrated } = storage;
+  const [walletReady, setWalletReady] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [dataOutput, setDataOutput] = useState<DataOutput>(null);
+  const busy = useRef(false);
+  busy.current = isProcessing;
+
+  const spendable = () => readProofs()[walletMintKey(activeMint)] || [];
+
+  const handleSetMint = useCallback(
+    async (input: string, opts: { silent?: boolean } = {}) => {
+      const url = normalizeMint(input || "");
+      if (!url) return setDataOutput({ error: "Enter a mint URL" });
+      try {
+        const wallet = await getWallet(url);
+        switchMint(url);
+        setWalletReady(true);
+        importLegacyPendingMints();
+        recoverOpen(url).catch(() => {});
+        if (!opts.silent) {
+          setDataOutput({ status: "Mint connected ", keysId: wallet.keysetId });
+        }
+      } catch (error) {
+        setWalletReady(false);
+        if (!opts.silent) setDataOutput({ error: "Connection failed", details: errText(error) });
+      }
+    },
+    [switchMint]
+  );
+
+  // Reconnect the last mint on load, so unfinished operations get recovered.
+  const autoConnected = useRef(false);
+  useEffect(() => {
+    if (!hydrated || autoConnected.current || !activeMint) return;
+    autoConnected.current = true;
+    handleSetMint(activeMint, { silent: true });
+  }, [hydrated, activeMint, handleSetMint]);
+
+  // Drive open operations (unpaid invoices, pending melts...) while the page is open.
+  useEffect(() => {
+    if (!walletReady || !activeMint) return;
+    let stopped = false;
+    const tick = async () => {
+      const before = openOps(activeMint).filter((o) => o.kind === "mint").map((o) => o.id);
+      if (!openOps(activeMint).length) return;
+      await recoverOpen(activeMint).catch(() => {});
+      if (stopped) return;
+      for (const id of before) {
+        const op = getOp(id) as MintOp | null;
+        if (op?.state === "DONE" && !busy.current) {
+          setDataOutput({ status: "Mint successful ✓", type: "mint", amount: op.amount, receivedProofs: 1 });
+        }
+      }
+    };
+    const t = setInterval(tick, 4000);
+    return () => {
+      stopped = true;
+      clearInterval(t);
+    };
+  }, [walletReady, activeMint]);
+
+  const guard = (): boolean => {
+    if (!walletReady || !activeMint) {
+      setDataOutput({ error: "Wallet or mint not ready" });
+      return false;
+    }
+    return true;
+  };
+
+  const handleMint = async (amountInput: string | number) => {
+    const amount = parseInt(String(amountInput), 10);
+    if (isNaN(amount) || amount <= 0) return setDataOutput({ error: "Enter amount > 0" });
+    if (!guard()) return;
+    setIsProcessing(true);
+    try {
+      const op = await startMint(activeMint, amount); // NUT-04 quote, journaled first
+      setDataOutput({ status: "Invoice created", invoice: op.invoice, quoteId: op.id });
+    } catch (err) {
+      setDataOutput({ error: "Failed to create invoice", details: errText(err) });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleMelt = async (invoiceInput: string) => {
+    const invoice = invoiceInput?.trim();
+    if (!invoice) return setDataOutput({ error: "Please enter a Bolt11 invoice" });
+    if (!guard()) return;
+    setIsProcessing(true);
+    try {
+      const op = await startMelt(activeMint, invoice, spendable()); // NUT-05 + NUT-08 change
+      if (op.state === "DONE") {
+        setDataOutput({
+          status: "Success ✓",
+          type: "melt",
+          success: `Paid ${op.amount} sats successfully!`,
+          preimage: op.preimage || "N/A",
+          amount: op.amount,
+          feeReserve: op.feeReserve,
+          changeReceived: op.change || 0,
+          estimatedNewBalance: balance - op.amount - op.feeReserve + (op.change || 0),
+        });
+      } else if (op.state === "FAILED") {
+        setDataOutput({ error: "Melt failed", details: op.error || "The mint could not pay the invoice. Your sats are back." });
+      } else {
+        setDataOutput({
+          error: "Payment pending",
+          details: "The mint is still paying. The sats stay reserved and this wallet will finish or refund it automatically.",
+        });
+      }
+    } catch (err) {
+      setDataOutput({ error: "Melt failed", details: errText(err) });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleSwapSend = async (amountInput: string | number) => {
+    const amount = parseInt(String(amountInput), 10);
+    if (isNaN(amount) || amount <= 0) return setDataOutput({ error: "Enter a valid amount > 0" });
+    if (!guard()) return;
+    setIsProcessing(true);
+    try {
+      const op = await startSend(activeMint, amount, spendable()); // NUT-03, token persisted
+      if (op.state !== "DONE" || !op.token) {
+        throw new Error(op.error || "The mint did not answer. The token will appear in History once recovered.");
+      }
+      setDataOutput({
+        status: "Token created successfully",
+        type: "swap-send",
+        amount,
+        token: op.token,
+        message: "Copy this token and send it to the receiver. It is also saved in History.",
+      });
+    } catch (err) {
+      setDataOutput({ error: "Swap Send failed", message: errText(err) });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleSwapClaim = async (tokenInput: string) => {
+    const token = tokenInput.trim();
+    if (!token) return setDataOutput({ error: "Enter a token string" });
+    setIsProcessing(true);
+    try {
+      const op = await startReceive(token); // NUT-03 swap; final only on success
+      if (op.state === "FAILED") throw new Error(op.error || "Token could not be claimed");
+      if (op.state !== "DONE") throw new Error(op.error || "The mint did not answer. The claim will be retried automatically.");
+      if (normalizeMint(op.mint) !== normalizeMint(activeMint)) switchMint(op.mint);
+      setDataOutput({
+        status: " Claim successful",
+        type: "swap-claim",
+        amount: op.amount,
+        receivedCount: 1,
+        message: `Added ${op.amount} sat to your balance`,
+      });
+    } catch (error) {
+      setDataOutput({ error: "Claim failed", message: errText(error) });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  return {
+    walletReady,
+    isProcessing,
+    dataOutput,
+    balance,
+    activeMint,
+    hydrated,
+    handleSetMint,
+    handleMint,
+    handleMelt,
+    handleSwapSend,
+    handleSwapClaim,
+    setDataOutput,
+    storage,
+  };
+}
