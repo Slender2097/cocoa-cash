@@ -1,13 +1,17 @@
 // src/components/wallet/HistoryPanel.tsx
-// Local activity list plus every token this wallet created (from the journal).
+// Local activity list plus every token this wallet created (from the journal),
+// and sends the mint never confirmed, with a Cancel that only returns the sats
+// when the mint says they are unspent (journal cancelSend, NUT-07).
 // MIT License
 
 import { useEffect, useState } from "react";
 import Sheet from "./Sheet";
 import { CopyButton } from "@/components/ui/CopyButton";
 import { mintLabel } from "@/lib/utils/mintLabel";
-import { listOps, JOURNAL_EVENT } from "@/lib/cashu/journal";
+import { listOps, cancelSend, JOURNAL_EVENT } from "@/lib/cashu/journal";
 import type { SendOp } from "@/lib/cashu/journal";
+import { sumProofs } from "@/lib/cashu/storage";
+import { errText } from "@/lib/cashu/outputs";
 
 export type Tx = { id: number; type: string; amount: number; mint: string; timestamp: string };
 
@@ -15,15 +19,78 @@ const LABEL: Record<string, string> = { mint: "Mint", melt: "Melt", "swap-send":
 
 export default function HistoryPanel({ transactions, onClose }: { transactions: Tx[]; onClose: () => void }) {
   const [sent, setSent] = useState<SendOp[]>([]);
+  const [stuck, setStuck] = useState<SendOp[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState("");
+  const load = () => {
+    const sends = listOps().filter((o): o is SendOp => o.kind === "send");
+    setSent(sends.filter((o) => !!o.token));
+    setStuck(sends.filter((o) => o.state === "PREPARED"));
+  };
   useEffect(() => {
-    const load = () => setSent(listOps().filter((o): o is SendOp => o.kind === "send" && !!o.token));
-    load();
+    load(); // eslint-disable-line react-hooks/set-state-in-effect -- read the journal once on open
     window.addEventListener(JOURNAL_EVENT, load);
     return () => window.removeEventListener(JOURNAL_EVENT, load);
   }, []);
 
+  const cancel = async (id: string) => {
+    setBusy(id);
+    setNote("");
+    try {
+      const op = await cancelSend(id); // returns the sats only if NUT-07 says the inputs are UNSPENT
+      if (op.state === "FAILED" && op.error === "Cancelled") {
+        setNote(`Cancelled. ${sumProofs(op.inputs).toLocaleString("en-US")} sat are back in your balance.`);
+      } else if (op.state === "FAILED") {
+        setNote("The mint says these sats were already spent elsewhere, so there is nothing to return.");
+      } else if (op.state === "DONE") {
+        setNote("The mint finished this send after all. Its token is under Sent tokens.");
+      } else {
+        setNote("The mint has not settled these sats yet, so they stay held. Try again later.");
+      }
+    } catch (e) {
+      setNote(`Could not reach the mint: ${errText(e)}`);
+    } finally {
+      setBusy(null);
+      load();
+    }
+  };
+
   return (
     <Sheet title="History" onClose={onClose}>
+      {note && (
+        <p className="mb-4 rounded-2xl border border-[#4ff4c6]/30 bg-[#4ff4c6]/5 px-4 py-3 text-sm text-[#a3ffe0]" role="status">
+          {note}
+        </p>
+      )}
+      {stuck.length > 0 && (
+        <div className="mb-4 rounded-2xl border border-amber-300/30 bg-amber-300/5 p-4" data-testid="stuck-sends">
+          <p className="text-[#e8fff7]">Unfinished sends ({stuck.length})</p>
+          <p className="mt-1 text-xs text-[#e8fff7]/50">
+            The mint has not confirmed these, so their sats are held back. Cancel asks the mint first and returns the sats only if
+            they were never spent.
+          </p>
+          <div className="mt-3 space-y-3">
+            {stuck.map((op) => (
+              <div key={op.id} className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm text-[#e8fff7]">
+                    {op.amount} sat · {mintLabel(op.mint)}
+                  </p>
+                  <p className="truncate text-xs text-[#e8fff7]/50">
+                    {new Date(op.createdAt).toLocaleString()}
+                    {op.error ? ` · ${op.error}` : ""}
+                  </p>
+                </div>
+                <div className="w-28 shrink-0">
+                  <button className="btn-ghost w-full !py-2 !text-sm" disabled={!!busy} onClick={() => cancel(op.id)}>
+                    {busy === op.id ? "Checking…" : "Cancel"}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {sent.length > 0 && (
         <details className="mb-4 rounded-2xl border border-[#4ff4c6]/15 bg-[#07110d]/50 p-4">
           <summary className="cursor-pointer text-[#a3ffe0]">Sent tokens ({sent.length})</summary>
