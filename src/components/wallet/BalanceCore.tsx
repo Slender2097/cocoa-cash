@@ -2,23 +2,25 @@
 // The glowing balance at the center of the wallet, plus the mint it belongs to.
 //
 // The core is the wallet's power core, a living instrument:
-// - Energy: while awake a current runs through the rings (bright heads with
-//   long tails, the rim and track one way, the dashed ring the other). The
-//   light blooms and hums with a faint flicker, a deep field around the rim
-//   beats slowly and gives the core its weight, and sparks crackle along the
-//   rings now and then. Every 16 to 18 s the rim flares once and a faint
-//   wave of light rolls out into the dark, so it never looks asleep.
+// - Energy: while awake a continuous current flows around the outer rings, a
+//   stream of light all the way round led by a bright head (the rim and track
+//   one way, the dashed ring the other). It runs slowly at rest and much
+//   faster while an action runs. The light blooms and hums with a faint
+//   flicker, a deep field around the rim beats slowly and gives the core its
+//   weight, and sparks crackle along the rings now and then. Every 16 to 18 s
+//   the rim flares once and a faint wave of light rolls out into the dark.
 // - Presence: the rings lean toward a nearby pointer or finger and light up
-//   hard on that side, sparks crackle toward it, two light streaks chase it
-//   around the rim, a beam runs out to it and the lens flares toward it. When
-//   it leaves, the light lingers a moment and settles (useCorePointer).
+//   hard on that side, short streaks of light run along the rings toward it
+//   from both sides, two more chase it around the rim, a beam runs out to it
+//   and the lens flares hard toward it. When it leaves, the light lingers a
+//   moment and settles (useCorePointer).
 // - Mood: dim until a mint is connected. Connecting, or the first touch after
-//   a rest, sends one wave of light out through the rings, lighting each ring
-//   as it passes. While an action
-//   runs the current speeds up and the lens pulses tight and bright; after a
-//   while without input it breathes slower and deeper. Opening a panel
-//   tightens the rings and brightens the lens for a moment, then softens it;
-//   closing the panel wakes it with a short flare.
+//   a rest, sends one strong wave of light out through the rings, lighting
+//   each ring as it passes. While an action runs the current speeds up and
+//   the lens pulses tight and bright; after a while without input it
+//   breathes slower and deeper. Opening a panel tightens the rings and
+//   brightens the lens for a moment, then softens it; closing the panel
+//   wakes it with a short flare.
 // - Reactions: when the balance goes up (a mint, a claim, a tip claimed in
 //   another tab) a bright wave leaves the rings and sparks run around the rim;
 //   when it goes down (a melt, a send) the rings draw in and the glow dips.
@@ -257,27 +259,32 @@ export default function BalanceCore({
                 <div className={fx.near}>
                   <span className={fx.aura} />
                 </div>
-                {/* the energy current: rim and track clockwise, dashed ring the other way */}
+                {/* the energy current: a stream of light all the way around the rim and
+                    the track, led by a bright head, clockwise; the dashed ring the other way */}
                 <span className={fx.current}>
+                  <span className={fx.stream} />
                   <span className={fx.bloom} />
                   <span className={fx.head} />
                 </span>
                 <span className={fx.counter}>
                   <span className={fx.counterBloom} />
                 </span>
-                {/* a faster current while an action runs */}
-                <span className={fx.rush} />
+                {/* the same current, much faster, while an action runs */}
+                <span className={fx.rush}>
+                  <span className={fx.stream} />
+                </span>
                 {/* the rim flares once every 16 to 18 s */}
                 <span className={fx.ringFlare} />
                 {/* now and then a spark crackles along the rings */}
                 <span className={fx.crackle} />
                 {/* the side facing the pointer lights up: rings, a beam, the lens rim,
-                    and sparks crackle toward it */}
+                    and short streaks of light run along the rings toward it from both sides */}
                 <span className={fx.arc}>
                   <span className={fx.arcBloom} />
                   <span className={fx.beam} />
                   <span className={fx.lensFlare} />
-                  <span className={fx.zap} />
+                  <span className={fx.inflow} />
+                  <span className={`${fx.inflow} ${fx.inflowMirror}`} />
                 </span>
                 {/* light streaks that chase the pointer around the rim */}
                 <span className={`${fx.streak} ${fx.streakA}`} />

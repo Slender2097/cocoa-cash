@@ -55,6 +55,25 @@
     rgba(0, 0, 0, 0.28) 91.6%,
     transparent 93.6%
   );
+  /* Bolder still, for the streaks that run toward the pointer. */
+  --rimStreak: radial-gradient(
+    closest-side,
+    transparent 90%,
+    rgba(0, 0, 0, 0.4) 93.5%,
+    #000 95.9%,
+    #000 98.1%,
+    rgba(0, 0, 0, 0.4) 99.6%,
+    transparent 100%
+  );
+  --trackStreak: radial-gradient(
+    closest-side,
+    transparent 84.6%,
+    rgba(0, 0, 0, 0.4) 87.6%,
+    #000 89.2%,
+    #000 90.8%,
+    rgba(0, 0, 0, 0.4) 92.4%,
+    transparent 95.4%
+  );
 }
 
 /* Everything but the number. Mood changes fade its opacity and scale.
@@ -119,12 +138,12 @@
   inset: 0;
   border-radius: 9999px;
   background: conic-gradient(
-    from -62deg,
+    from -48deg,
     rgba(163, 255, 224, 0) 0deg,
-    rgba(163, 255, 224, 0.75) 38deg,
-    rgba(232, 255, 247, 1) 62deg,
-    rgba(163, 255, 224, 0.75) 86deg,
-    rgba(163, 255, 224, 0) 124deg
+    rgba(163, 255, 224, 0.5) 30deg,
+    rgba(232, 255, 247, 0.8) 48deg,
+    rgba(163, 255, 224, 0.5) 66deg,
+    rgba(163, 255, 224, 0) 96deg
   );
   mask-image: var(--rim), var(--track), var(--dash);
 }
@@ -166,7 +185,7 @@
     rgba(79, 244, 198, 0) 100%
   );
 }
-/* the lens rim flares toward the pointer */
+/* the lens flares hard toward the pointer */
 .lensFlare {
   position: absolute;
   inset: 15%;
@@ -178,97 +197,88 @@
   position: absolute;
   inset: 0;
   background: radial-gradient(
-    ellipse 46% 20% at 50% 0%,
-    rgba(163, 255, 224, 0.4) 0%,
-    rgba(79, 244, 198, 0.15) 45%,
+    ellipse 50% 24% at 50% 0%,
+    rgba(232, 255, 247, 0.3) 0%,
+    rgba(163, 255, 224, 0.28) 22%,
+    rgba(79, 244, 198, 0.13) 52%,
     rgba(79, 244, 198, 0) 100%
   );
 }
+/* and its edge burns bright on that side */
+.lensFlare::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: conic-gradient(
+    from -50deg,
+    rgba(163, 255, 224, 0) 0deg,
+    rgba(163, 255, 224, 0.55) 30deg,
+    rgba(232, 255, 247, 0.95) 50deg,
+    rgba(163, 255, 224, 0.55) 70deg,
+    rgba(163, 255, 224, 0) 100deg
+  );
+  mask-image: radial-gradient(closest-side, transparent 91%, rgba(0, 0, 0, 0.4) 94.5%, #000 97.5%, #000 99.2%, transparent 100%);
+}
 
-/* Near the pointer the crackle never stops: sparks jump on the rim and the
-   track at the edges of the lit side, where they show against the dimmer
-   light (the spark shapes are with .crackle below). */
-.zap {
+/* Short streaks of light run along the rim and the track toward the
+   pointer, from both sides (the second set is mirrored), speeding up as they
+   go and fading as they reach it, so the light is drawn to it. */
+.inflow {
   position: absolute;
   inset: 0;
 }
-.zap::before {
-  animation-name: zap-a;
-  animation-duration: 1.3s;
+.inflowMirror {
+  transform: scaleX(-1);
 }
-.zap::after {
-  animation-name: zap-b;
-  animation-duration: 1.75s;
-  animation-delay: -0.6s;
+.inflow::before,
+.inflow::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  opacity: 0;
+  animation: inflow 0.9s cubic-bezier(0.45, 0, 0.85, 0.55) infinite;
 }
-@keyframes zap-a {
+.inflow::before {
+  background: conic-gradient(
+    from -24deg,
+    rgba(163, 255, 224, 0) 0deg,
+    rgba(163, 255, 224, 0.5) 16deg,
+    rgba(232, 255, 247, 1) 22deg,
+    rgba(232, 255, 247, 0) 24deg
+  );
+  mask-image: var(--rimStreak);
+}
+.inflow::after {
+  background: conic-gradient(
+    from -17deg,
+    rgba(163, 255, 224, 0) 0deg,
+    rgba(163, 255, 224, 0.45) 12deg,
+    rgba(232, 255, 247, 0.95) 16deg,
+    rgba(232, 255, 247, 0) 17deg
+  );
+  mask-image: var(--trackStreak);
+  animation-delay: -0.45s;
+}
+.inflowMirror::before {
+  animation-delay: -0.22s;
+}
+.inflowMirror::after {
+  animation-delay: -0.67s;
+}
+@keyframes inflow {
   0% {
-    opacity: 1;
-    transform: rotate(-38deg);
-  }
-  6% {
-    opacity: 0.25;
-    transform: rotate(-31deg);
-  }
-  12% {
-    opacity: 0.9;
-    transform: rotate(-44deg);
-  }
-  18% {
     opacity: 0;
-    transform: rotate(36deg);
+    transform: rotate(-96deg);
   }
-  50% {
-    opacity: 0.85;
-    transform: rotate(36deg);
-  }
-  56% {
-    opacity: 0.3;
-    transform: rotate(42deg);
-  }
-  62% {
+  16%,
+  80% {
     opacity: 1;
-    transform: rotate(30deg);
   }
-  68%,
   100% {
     opacity: 0;
-    transform: rotate(-38deg);
-  }
-}
-@keyframes zap-b {
-  0% {
-    opacity: 0.9;
-    transform: rotate(40deg);
-  }
-  5% {
-    opacity: 0.3;
-    transform: rotate(33deg);
-  }
-  10% {
-    opacity: 0.95;
-    transform: rotate(46deg);
-  }
-  15% {
-    opacity: 0;
-    transform: rotate(-35deg);
-  }
-  55% {
-    opacity: 1;
-    transform: rotate(-35deg);
-  }
-  60% {
-    opacity: 0.35;
-    transform: rotate(-41deg);
-  }
-  65% {
-    opacity: 0.8;
-    transform: rotate(-29deg);
-  }
-  70%,
-  100% {
-    opacity: 0;
-    transform: rotate(40deg);
+    transform: rotate(-6deg);
   }
 }
 
@@ -615,7 +625,117 @@
   );
 }
 
-/* While an action runs, a faster pair takes over from the current. */
+/* The stream: the current is continuous, a run of light packets of uneven
+   strength all the way around the rim and a dimmer run on the dotted track,
+   each a soft tail into a bright point, so the light visibly flows around
+   the rings. It turns with the current, slowly; the busy current carries
+   its own copy at speed. */
+.stream {
+  position: absolute;
+  inset: 0;
+}
+.stream::before,
+.stream::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+}
+.stream::before {
+  background: conic-gradient(
+    rgba(79, 244, 198, 0) 0deg,
+    rgba(79, 244, 198, 0.17) 10deg,
+    rgba(163, 255, 224, 0.55) 17deg,
+    rgba(79, 244, 198, 0) 19.5deg,
+    rgba(79, 244, 198, 0) 31deg,
+    rgba(79, 244, 198, 0.24) 41deg,
+    rgba(163, 255, 224, 0.8) 48deg,
+    rgba(79, 244, 198, 0) 50.5deg,
+    rgba(79, 244, 198, 0) 59deg,
+    rgba(79, 244, 198, 0.13) 69deg,
+    rgba(163, 255, 224, 0.42) 76deg,
+    rgba(79, 244, 198, 0) 78.5deg,
+    rgba(79, 244, 198, 0) 92deg,
+    rgba(79, 244, 198, 0.21) 102deg,
+    rgba(163, 255, 224, 0.7) 109deg,
+    rgba(79, 244, 198, 0) 111.5deg,
+    rgba(79, 244, 198, 0) 120deg,
+    rgba(79, 244, 198, 0.27) 130deg,
+    rgba(163, 255, 224, 0.9) 137deg,
+    rgba(79, 244, 198, 0) 139.5deg,
+    rgba(79, 244, 198, 0) 151deg,
+    rgba(79, 244, 198, 0.15) 161deg,
+    rgba(163, 255, 224, 0.5) 168deg,
+    rgba(79, 244, 198, 0) 170.5deg,
+    rgba(79, 244, 198, 0) 182deg,
+    rgba(79, 244, 198, 0.22) 192deg,
+    rgba(163, 255, 224, 0.75) 199deg,
+    rgba(79, 244, 198, 0) 201.5deg,
+    rgba(79, 244, 198, 0) 209deg,
+    rgba(79, 244, 198, 0.14) 219deg,
+    rgba(163, 255, 224, 0.45) 226deg,
+    rgba(79, 244, 198, 0) 228.5deg,
+    rgba(79, 244, 198, 0) 241deg,
+    rgba(79, 244, 198, 0.26) 251deg,
+    rgba(163, 255, 224, 0.85) 258deg,
+    rgba(79, 244, 198, 0) 260.5deg,
+    rgba(79, 244, 198, 0) 270deg,
+    rgba(79, 244, 198, 0.18) 280deg,
+    rgba(163, 255, 224, 0.6) 287deg,
+    rgba(79, 244, 198, 0) 289.5deg,
+    rgba(79, 244, 198, 0) 301deg,
+    rgba(79, 244, 198, 0.22) 311deg,
+    rgba(163, 255, 224, 0.72) 318deg,
+    rgba(79, 244, 198, 0) 320.5deg,
+    rgba(79, 244, 198, 0) 329deg,
+    rgba(79, 244, 198, 0.15) 339deg,
+    rgba(163, 255, 224, 0.5) 346deg,
+    rgba(79, 244, 198, 0) 348.5deg,
+    rgba(79, 244, 198, 0) 360deg
+  );
+  mask-image: var(--rimSpark);
+}
+.stream::after {
+  background: conic-gradient(
+    rgba(79, 244, 198, 0) 14deg,
+    rgba(79, 244, 198, 0.12) 22deg,
+    rgba(163, 255, 224, 0.4) 28deg,
+    rgba(79, 244, 198, 0) 30deg,
+    rgba(79, 244, 198, 0) 58deg,
+    rgba(79, 244, 198, 0.17) 66deg,
+    rgba(163, 255, 224, 0.55) 72deg,
+    rgba(79, 244, 198, 0) 74deg,
+    rgba(79, 244, 198, 0) 101deg,
+    rgba(79, 244, 198, 0.09) 109deg,
+    rgba(163, 255, 224, 0.3) 115deg,
+    rgba(79, 244, 198, 0) 117deg,
+    rgba(79, 244, 198, 0) 147deg,
+    rgba(79, 244, 198, 0.15) 155deg,
+    rgba(163, 255, 224, 0.5) 161deg,
+    rgba(79, 244, 198, 0) 163deg,
+    rgba(79, 244, 198, 0) 190deg,
+    rgba(79, 244, 198, 0.14) 198deg,
+    rgba(163, 255, 224, 0.45) 204deg,
+    rgba(79, 244, 198, 0) 206deg,
+    rgba(79, 244, 198, 0) 236deg,
+    rgba(79, 244, 198, 0.1) 244deg,
+    rgba(163, 255, 224, 0.35) 250deg,
+    rgba(79, 244, 198, 0) 252deg,
+    rgba(79, 244, 198, 0) 279deg,
+    rgba(79, 244, 198, 0.17) 287deg,
+    rgba(163, 255, 224, 0.55) 293deg,
+    rgba(79, 244, 198, 0) 295deg,
+    rgba(79, 244, 198, 0) 322deg,
+    rgba(79, 244, 198, 0.12) 330deg,
+    rgba(163, 255, 224, 0.4) 336deg,
+    rgba(79, 244, 198, 0) 338deg,
+    rgba(79, 244, 198, 0) 360deg
+  );
+  mask-image: var(--trackSpark);
+}
+
+/* While an action runs, the whole current runs much faster: its own stream
+   at speed with a bright head, and the dashed ring's head the other way. */
 .rush {
   position: absolute;
   inset: 0;
@@ -636,7 +756,7 @@
     rgba(232, 255, 247, 1) 360deg
   );
   mask-image: var(--rim);
-  animation: turn 1.5s linear infinite;
+  animation: turn 1.2s linear infinite;
 }
 .rush::after {
   background: conic-gradient(
@@ -646,7 +766,10 @@
     rgba(79, 244, 198, 0) 360deg
   );
   mask-image: var(--dash);
-  animation: turn 1.15s linear infinite reverse;
+  animation: turn 0.95s linear infinite reverse;
+}
+.rush .stream {
+  animation: turn 1.6s linear infinite;
 }
 
 /* Now and then the rim flares: a bright sweep runs once around it while the
@@ -738,7 +861,7 @@
 /* Sparks crackle along the rings: a short bright segment flickers and jumps
    a few degrees, then is gone. The rim and the dotted track each get two per
    cycle, at different places, on cycles that rarely line up. Only while
-   awake. The same spark shapes crackle near the pointer (.zap). */
+   awake. */
 .crackle {
   position: absolute;
   inset: 0;
@@ -749,9 +872,7 @@
   opacity: 1;
 }
 .crackle::before,
-.crackle::after,
-.zap::before,
-.zap::after {
+.crackle::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -760,8 +881,7 @@
   animation-timing-function: steps(1, end);
   animation-iteration-count: infinite;
 }
-.crackle::before,
-.zap::before {
+.crackle::before {
   background: conic-gradient(
     from -11deg,
     rgba(163, 255, 224, 0) 0deg,
@@ -771,8 +891,7 @@
   );
   mask-image: var(--rimSpark);
 }
-.crackle::after,
-.zap::after {
+.crackle::after {
   background: conic-gradient(
     from -8deg,
     rgba(163, 255, 224, 0) 0deg,
@@ -1044,17 +1163,17 @@
   border-radius: 9999px;
   display: none;
   opacity: 0;
-  border: 1.5px solid rgba(163, 255, 224, 0.85);
+  border: 2px solid rgba(163, 255, 224, 0.95);
   box-shadow:
-    0 0 18px rgba(79, 244, 198, 0.6),
-    inset 0 0 14px rgba(79, 244, 198, 0.4);
+    0 0 22px rgba(79, 244, 198, 0.7),
+    inset 0 0 16px rgba(79, 244, 198, 0.45);
 }
 .core[data-busy] .pulse {
   display: block;
-  animation: pulse 0.8s cubic-bezier(0.25, 0.6, 0.3, 1) infinite;
+  animation: pulse 0.65s cubic-bezier(0.25, 0.6, 0.3, 1) infinite;
 }
 .core[data-busy] .pulse + .pulse {
-  animation-delay: 0.4s;
+  animation-delay: 0.325s;
 }
 @keyframes pulse {
   0% {
@@ -1063,7 +1182,7 @@
   }
   100% {
     opacity: 0;
-    transform: scale(1.085);
+    transform: scale(1.06);
   }
 }
 
@@ -1094,10 +1213,10 @@
   inset: 15%;
   border-radius: 9999px;
   opacity: 0;
-  border: 2px solid rgba(163, 255, 224, 0.9);
+  border: 2.5px solid rgba(232, 255, 247, 0.95);
   box-shadow:
-    0 0 40px 8px rgba(79, 244, 198, 0.5),
-    inset 0 0 34px 6px rgba(79, 244, 198, 0.36);
+    0 0 48px 10px rgba(79, 244, 198, 0.55),
+    inset 0 0 40px 8px rgba(79, 244, 198, 0.4);
   animation: surge 1.8s cubic-bezier(0.2, 0.7, 0.3, 1);
 }
 .surgeRings {
@@ -1132,7 +1251,7 @@
   position: absolute;
   inset: 0;
   border-radius: 9999px;
-  background: radial-gradient(closest-side, rgba(79, 244, 198, 0) 52%, rgba(79, 244, 198, 0.16) 84%, rgba(163, 255, 224, 0.3) 100%);
+  background: radial-gradient(closest-side, rgba(79, 244, 198, 0) 52%, rgba(79, 244, 198, 0.2) 84%, rgba(163, 255, 224, 0.4) 100%);
 }
 @keyframes surge {
   0% {
@@ -1144,7 +1263,7 @@
   }
   100% {
     opacity: 0;
-    transform: scale(1.9);
+    transform: scale(2.1);
   }
 }
 .core[data-waking="surge"] .lensFlash {
@@ -1191,7 +1310,7 @@
   transform: scale(0.985);
 }
 .core[data-covered][data-busy] .stage {
-  opacity: 0.85;
+  opacity: 1;
 }
 .core[data-covered] .focus {
   animation: focus 0.6s cubic-bezier(0.3, 0.7, 0.3, 1);
