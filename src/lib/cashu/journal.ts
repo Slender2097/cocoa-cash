@@ -267,11 +267,13 @@ export async function quoteMelt(mint: string, invoice: string): Promise<MeltQuot
 
 /** NUT-05 step 2: pay a quote from quoteMelt() that the user confirmed. */
 async function startMeltUnlocked(mint: string, invoice: string, quote: MeltQuoteBolt11Response): Promise<MeltOp> {
+  // A quote is paid at most once from this wallet: resume an existing record instead of reserving again.
+  const existing = getOp(quote.quote);
+  if (existing?.kind === "melt") return advanceMeltUnlocked(quote.quote);
+  if (existing) throw new Error("This quote id is already used by another operation in this wallet.");
   if (quote.expiry && Date.now() > quote.expiry * 1000) {
     throw new Error("This quote expired. Paste the invoice again to get a fresh one.");
   }
-  // A quote is paid at most once from this wallet: resume an existing record instead of reserving again.
-  if (getOp(quote.quote)) return advanceMeltUnlocked(quote.quote);
   const wallet = await getWallet(mint);
   const spendable = readProofs()[walletMintKey(mint)] || []; // read under the lock, after any wait
   const amount = Amount.from(quote.amount).toNumber();
