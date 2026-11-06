@@ -14,7 +14,7 @@ import type { MeltQuoteBolt11Response } from "@cashu/cashu-ts";
 import useProofStorage from "./useProofStorage";
 import type { ProofStorage } from "./useProofStorage";
 import { getWallet, errText } from "@/lib/cashu/outputs";
-import { readProofs, walletMintKey, normalizeMint } from "@/lib/cashu/storage";
+import { normalizeMint } from "@/lib/cashu/storage";
 import {
   startMint,
   quoteMelt,
@@ -82,8 +82,6 @@ export default function useCashu(): UseCashu {
     busy.current = isProcessing;
   }, [isProcessing]);
 
-  const spendable = () => readProofs()[walletMintKey(activeMint)] || [];
-
   const handleSetMint = useCallback(
     async (input: string, opts: { silent?: boolean } = {}) => {
       const url = normalizeMint(input || "");
@@ -120,7 +118,8 @@ export default function useCashu(): UseCashu {
     const tick = async () => {
       const before = openOps(activeMint).filter((o) => o.kind === "mint").map((o) => o.id);
       if (!openOps(activeMint).length) return;
-      await recoverOpen(activeMint).catch(() => {});
+      // Only runs while this tab can take the wallet lock; otherwise wait for the next tick.
+      await recoverOpen(activeMint, undefined, { background: true }).catch(() => {});
       if (stopped) return;
       for (const id of before) {
         const op = getOp(id) as MintOp | null;
@@ -191,7 +190,7 @@ export default function useCashu(): UseCashu {
     setIsProcessing(true);
     try {
       const { mint, invoice, quote } = confirmed;
-      const op = await startMelt(mint, invoice, quote, readProofs()[walletMintKey(mint)] || []); // NUT-05 + NUT-08 change
+      const op = await startMelt(mint, invoice, quote); // NUT-05 + NUT-08 change, under the wallet lock
       meltQuotes.current.delete(quoteId);
       if (op.state === "DONE") {
         setDataOutput({
@@ -225,7 +224,7 @@ export default function useCashu(): UseCashu {
     if (!guard()) return;
     setIsProcessing(true);
     try {
-      const op = await startSend(activeMint, amount, spendable()); // NUT-03, token persisted
+      const op = await startSend(activeMint, amount); // NUT-03, token persisted, under the wallet lock
       if (op.state !== "DONE" || !op.token) {
         throw new Error(op.error || "The mint did not answer. The token will appear in History once recovered.");
       }

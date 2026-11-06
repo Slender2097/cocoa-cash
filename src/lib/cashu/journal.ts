@@ -17,14 +17,18 @@
 //     a payment.
 //   * Every advance* function is idempotent: safe to call again after a crash,
 //     reload or network error.
+//   * Every exported operation runs under the cross-tab wallet lock
+//     (./lock.ts), so two tabs never interleave their read-modify-writes.
+//     Inside the lock, operations call the *Unlocked bodies directly.
 // MIT License
 
 import { Amount, MintQuoteState, MeltQuoteState, CheckStateEnum, getEncodedToken, getTokenMetadata } from "@cashu/cashu-ts";
 import type { MintPreview, MeltPreview, SwapPreview, Proof, Wallet, P2PKOptions, ProofLike, MeltQuoteBolt11Response } from "@cashu/cashu-ts";
-import { addProofs, removeProofs, normalizeMint, readJSON, writeJSON, sumProofs, toStoredProof } from "./storage";
+import { addProofs, removeProofs, normalizeMint, readJSON, writeJSON, sumProofs, toStoredProof, readProofs, walletMintKey } from "./storage";
 import type { StoredProof } from "./storage";
 import { getWallet, serializeOutputs, deserializeOutputs, restoreOutputs, errText } from "./outputs";
 import type { SerializedOutput } from "./outputs";
+import { withWalletLock, ifWalletLockFree } from "./lock";
 
 // ---------------------------------------------------------------------------
 // Record store
@@ -187,7 +191,7 @@ export async function swapWithRecovery(
 // Mint (NUT-04)
 // ---------------------------------------------------------------------------
 
-export async function startMint(mint: string, amount: number): Promise<MintOp> {
+async function startMintUnlocked(mint: string, amount: number): Promise<MintOp> {
   const wallet = await getWallet(mint);
   const q = await wallet.createMintQuoteBolt11(amount);
   return putOp<MintOp>(q.quote, {
@@ -201,7 +205,7 @@ export async function startMint(mint: string, amount: number): Promise<MintOp> {
   });
 }
 
-export async function advanceMint(id: string): Promise<MintOp> {
+async function advanceMintUnlocked(id: string): Promise<MintOp> {
   let op = getOp(id) as MintOp;
   const wallet = await getWallet(op.mint);
   if (op.state === "UNPAID") {
@@ -262,18 +266,14 @@ export async function quoteMelt(mint: string, invoice: string): Promise<MeltQuot
 }
 
 /** NUT-05 step 2: pay a quote from quoteMelt() that the user confirmed. */
-export async function startMelt(
-  mint: string,
-  invoice: string,
-  quote: MeltQuoteBolt11Response,
-  spendable: StoredProof[]
-): Promise<MeltOp> {
+async function startMeltUnlocked(mint: string, invoice: string, quote: MeltQuoteBolt11Response): Promise<MeltOp> {
   if (quote.expiry && Date.now() > quote.expiry * 1000) {
     throw new Error("This quote expired. Paste the invoice again to get a fresh one.");
   }
   // A quote is paid at most once from this wallet: resume an existing record instead of reserving again.
-  if (getOp(quote.quote)) return advanceMelt(quote.quote);
+  if (getOp(quote.quote)) return advanceMeltUnlocked(quote.quote);
   const wallet = await getWallet(mint);
+  const spendable = readProofs()[walletMintKey(mint)] || []; // read under the lock, after any wait
   const amount = Amount.from(quote.amount).toNumber();
   const feeReserve = Amount.from(quote.fee_reserve).toNumber();
   const { send } = wallet.selectProofsToSend(spendable.map(toProofLike), amount + feeReserve, true);
@@ -294,10 +294,10 @@ export async function startMelt(
     createdAt: Date.now(),
   });
   removeProofs(op.mint, op.inputs); // reserved inside the record until resolved
-  return advanceMelt(op.id);
+  return advanceMeltUnlocked(op.id);
 }
 
-export async function advanceMelt(id: string): Promise<MeltOp> {
+async function advanceMeltUnlocked(id: string): Promise<MeltOp> {
   let op = getOp(id) as MeltOp;
   const wallet = await getWallet(op.mint);
   const outputData = deserializeOutputs(op.outputs);
@@ -359,8 +359,9 @@ export async function advanceMelt(id: string): Promise<MeltOp> {
 // Send = create a token (NUT-03 swap), token persisted in the journal
 // ---------------------------------------------------------------------------
 
-export async function startSend(mint: string, amount: number, spendable: StoredProof[]): Promise<SendOp> {
+async function startSendUnlocked(mint: string, amount: number): Promise<SendOp> {
   const wallet = await getWallet(mint);
+  const spendable = readProofs()[walletMintKey(mint)] || []; // read under the lock, after any wait
   const { send } = wallet.selectProofsToSend(spendable.map(toProofLike), amount, true);
   if (sumProofs(send) < amount) throw new Error("Insufficient balance");
   const preview = await wallet.prepareSwapToSend(amount, send);
@@ -377,10 +378,10 @@ export async function startSend(mint: string, amount: number, spendable: StoredP
     createdAt: Date.now(),
   });
   removeProofs(op.mint, op.inputs);
-  return advanceSend(op.id);
+  return advanceSendUnlocked(op.id);
 }
 
-export async function advanceSend(id: string): Promise<SendOp> {
+async function advanceSendUnlocked(id: string): Promise<SendOp> {
   const op = getOp(id) as SendOp;
   if (op.state !== "PREPARED") return op;
   const wallet = await getWallet(op.mint);
@@ -405,12 +406,12 @@ export async function advanceSend(id: string): Promise<SendOp> {
 }
 
 /** Give up on a send that never reached the mint: only if NUT-07 says inputs are UNSPENT. */
-export async function cancelSend(id: string): Promise<SendOp> {
+async function cancelSendUnlocked(id: string): Promise<SendOp> {
   const op = getOp(id) as SendOp;
   if (op.state !== "PREPARED") return op;
   const wallet = await getWallet(op.mint);
   const unspent = await inputsStillUnspent(wallet, op.inputs);
-  if (unspent !== true) return advanceSend(id);
+  if (unspent !== true) return advanceSendUnlocked(id);
   addProofs(op.mint, op.inputs);
   return putOp<SendOp>(id, { state: "FAILED", error: "Cancelled" });
 }
@@ -443,7 +444,8 @@ export async function dropSpentProofs(token: string): Promise<{ token: string; s
   return { token: getEncodedToken({ ...decoded, proofs: live }), spent };
 }
 
-export async function startReceive(token: string, opts: { privkey?: string; id?: string } = {}): Promise<ReceiveOp> {
+/** Unlocked body of startReceive, for code that already holds the wallet lock (the tip board's claimAll). */
+export async function startReceiveUnlocked(token: string, opts: { privkey?: string; id?: string } = {}): Promise<ReceiveOp> {
   const meta = getTokenMetadata(token.trim());
   const wallet = await getWallet(meta.mint);
   const preview = await wallet.prepareSwapToReceive(token.trim(), opts.privkey ? { privkey: opts.privkey } : undefined);
@@ -459,10 +461,11 @@ export async function startReceive(token: string, opts: { privkey?: string; id?:
     state: "PREPARED",
     createdAt: Date.now(),
   });
-  return advanceReceive(op.id, opts.privkey);
+  return advanceReceiveUnlocked(op.id, opts.privkey);
 }
 
-export async function advanceReceive(id: string, privkey?: string): Promise<ReceiveOp> {
+/** Unlocked body of advanceReceive, for code that already holds the wallet lock. */
+export async function advanceReceiveUnlocked(id: string, privkey?: string): Promise<ReceiveOp> {
   const op = getOp(id) as ReceiveOp;
   if (op.state !== "PREPARED") return op;
   const wallet = await getWallet(op.mint);
@@ -532,16 +535,48 @@ export function importLegacyPendingMints(): void {
   localStorage.removeItem("pendingMints");
 }
 
-/** Resume every open operation for a mint (call on connect, and periodically). */
-export async function recoverOpen(mint: string, privkey?: string): Promise<void> {
+async function recoverOpenUnlocked(mint: string, privkey?: string): Promise<void> {
   for (const op of openOps(mint)) {
     try {
-      if (op.kind === "mint") await advanceMint(op.id);
-      else if (op.kind === "melt") await advanceMelt(op.id);
-      else if (op.kind === "send") await advanceSend(op.id);
-      else if (op.kind === "receive" && (!op.needsKey || privkey)) await advanceReceive(op.id, privkey);
+      if (op.kind === "mint") await advanceMintUnlocked(op.id);
+      else if (op.kind === "melt") await advanceMeltUnlocked(op.id);
+      else if (op.kind === "send") await advanceSendUnlocked(op.id);
+      else if (op.kind === "receive" && (!op.needsKey || privkey)) await advanceReceiveUnlocked(op.id, privkey);
     } catch {
       // network trouble: next round
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Entry points. Each one holds the cross-tab wallet lock (./lock.ts) for the
+// whole operation, so tabs take turns on proofs and the journal.
+// ---------------------------------------------------------------------------
+
+export const startMint = (mint: string, amount: number) => withWalletLock(() => startMintUnlocked(mint, amount));
+export const advanceMint = (id: string) => withWalletLock(() => advanceMintUnlocked(id));
+
+/** Pay a confirmed NUT-05 quote. Spendable proofs are read inside the lock. */
+export const startMelt = (mint: string, invoice: string, quote: MeltQuoteBolt11Response) =>
+  withWalletLock(() => startMeltUnlocked(mint, invoice, quote));
+export const advanceMelt = (id: string) => withWalletLock(() => advanceMeltUnlocked(id));
+
+/** Create a token (NUT-03). Spendable proofs are read inside the lock. */
+export const startSend = (mint: string, amount: number) => withWalletLock(() => startSendUnlocked(mint, amount));
+export const advanceSend = (id: string) => withWalletLock(() => advanceSendUnlocked(id));
+/** Give up on a send that never reached the mint: only if NUT-07 says inputs are UNSPENT. */
+export const cancelSend = (id: string) => withWalletLock(() => cancelSendUnlocked(id));
+
+export const startReceive = (token: string, opts: { privkey?: string; id?: string } = {}) =>
+  withWalletLock(() => startReceiveUnlocked(token, opts));
+export const advanceReceive = (id: string, privkey?: string) => withWalletLock(() => advanceReceiveUnlocked(id, privkey));
+
+/**
+ * Resume every open operation for a mint. On connect it waits for the lock.
+ * The periodic ticker passes { background: true }: it runs only when it can
+ * take the lock right away, and skips the round while any tab is busy.
+ */
+export function recoverOpen(mint: string, privkey?: string, opts: { background?: boolean } = {}): Promise<void> {
+  const run = () => recoverOpenUnlocked(mint, privkey);
+  return opts.background ? ifWalletLockFree(run).then(() => undefined) : withWalletLock(run);
 }

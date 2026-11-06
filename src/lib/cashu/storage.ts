@@ -4,8 +4,10 @@
 // wallet has always used, so existing wallets keep working.
 //
 // All writes are read-modify-write against localStorage (never "save my
-// in-memory copy"), so two hook instances or two tabs cannot overwrite each
-// other's proofs with a stale copy.
+// in-memory copy"), so two hook instances cannot overwrite each other's
+// proofs with a stale copy. localStorage is not transactional across tabs,
+// so the wallet operations that call these helpers run under the cross-tab
+// wallet lock (./lock.ts).
 // MIT License
 
 import type { Proof, ProofLike, SerializedDLEQ } from "@cashu/cashu-ts";
