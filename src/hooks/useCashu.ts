@@ -69,7 +69,9 @@ export default function useCashu(): UseCashu {
   const [isProcessing, setIsProcessing] = useState(false);
   const [dataOutput, setDataOutput] = useState<DataOutput>(null);
   const busy = useRef(false);
-  busy.current = isProcessing;
+  useEffect(() => {
+    busy.current = isProcessing;
+  }, [isProcessing]);
 
   const spendable = () => readProofs()[walletMintKey(activeMint)] || [];
 

@@ -55,7 +55,9 @@ function Copy({ text, label = "Copy" }: { text: string; label?: string }) {
 
 function Scanner({ onResult, onClose }: { onResult: (text: string) => void; onClose: (msg?: string) => void }) {
   const cb = useRef({ onResult, onClose });
-  cb.current = { onResult, onClose };
+  useEffect(() => {
+    cb.current = { onResult, onClose };
+  });
   useEffect(() => {
     let scanner: import("html5-qrcode").Html5Qrcode | undefined;
     let stopped = false;
@@ -116,8 +118,10 @@ export default function TipPage() {
     const open = openOutbox(cfg.pubkey!);
     const unpaid = open.find((r) => r.kind === "lightning" && r.state === "UNPAID");
     if (unpaid) {
+      /* eslint-disable react-hooks/set-state-in-effect -- resume a record saved in localStorage */
       setRecord(unpaid);
       setView("invoice");
+      /* eslint-enable react-hooks/set-state-in-effect */
     }
     // Finish paid-but-undelivered tips quietly in the background.
     open

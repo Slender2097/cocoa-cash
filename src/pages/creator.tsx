@@ -237,8 +237,10 @@ export default function CreatorPage() {
   const [origin, setOrigin] = useState("https://cocoa.cash");
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- one-time hydration from localStorage */
     setConfig(loadConfig());
     setOrigin(window.location.origin);
+    /* eslint-enable react-hooks/set-state-in-effect */
     const bump = () => setTick((t) => t + 1);
     const onStorage = (e: StorageEvent) => {
       if (e.key === "proofsByMint" || e.key === INBOX) bump();
@@ -272,7 +274,7 @@ export default function CreatorPage() {
   // Check on unlock, then every 60 s while the board is open.
   useEffect(() => {
     if (!skHex) return;
-    sync();
+    sync(); // eslint-disable-line react-hooks/set-state-in-effect -- first check right after unlock
     const id = setInterval(sync, 60000);
     return () => clearInterval(id);
   }, [skHex]); // eslint-disable-line react-hooks/exhaustive-deps
