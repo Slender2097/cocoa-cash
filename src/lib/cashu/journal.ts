@@ -22,7 +22,7 @@
 //     Inside the lock, operations call the *Unlocked bodies directly.
 // MIT License
 
-import { Amount, MintQuoteState, MeltQuoteState, CheckStateEnum, getEncodedToken, getTokenMetadata } from "@cashu/cashu-ts";
+import { Amount, MintQuoteState, MeltQuoteState, CheckStateEnum, getEncodedToken, getTokenMetadata, isMintOperationError } from "@cashu/cashu-ts";
 import type { MintPreview, MeltPreview, SwapPreview, Proof, Wallet, P2PKOptions, ProofLike, MeltQuoteBolt11Response } from "@cashu/cashu-ts";
 import { addProofs, removeProofs, normalizeMint, readJSON, writeJSON, sumProofs, toStoredProof, readProofs, walletMintKey } from "./storage";
 import type { StoredProof } from "./storage";
@@ -314,6 +314,9 @@ async function advanceMeltUnlocked(id: string): Promise<MeltOp> {
     return putOp<MeltOp>(id, { state: "DONE", change: sumProofs(change), preimage: preimage ?? null, error: null });
   };
 
+  // False right after a melt request that failed without an answer from the mint itself (network
+  // error, timeout, gateway 5xx): the mint may not have started on it yet.
+  let mintAnswered = true;
   if (op.state === "PREPARED") {
     try {
       const preview = {
@@ -332,6 +335,7 @@ async function advanceMeltUnlocked(id: string): Promise<MeltOp> {
       return op;
     } catch (e) {
       op = putOp<MeltOp>(id, { state: "PENDING", error: errText(e) }); // resolve via quote state below
+      mintAnswered = isMintOperationError(e);
     }
   }
 
@@ -343,7 +347,8 @@ async function advanceMeltUnlocked(id: string): Promise<MeltOp> {
       return putOp<MeltOp>(id, { error: errText(e) });
     }
     if (q.state === MeltQuoteState.PAID) return finishPaid([], q.payment_preimage);
-    if (q.state === MeltQuoteState.UNPAID) {
+    if (q.state === MeltQuoteState.UNPAID && mintAnswered) {
+      // Without an answer, a refund now could race a request still on its way: decide on a later round.
       const unspent = await inputsStillUnspent(wallet, op.inputs);
       if (unspent === true) {
         addProofs(op.mint, op.inputs); // payment failed: inputs back to balance

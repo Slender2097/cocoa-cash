@@ -124,13 +124,6 @@ export function removeProofs(mintUrl: string, proofs: Array<{ secret: string }>)
   notify();
 }
 
-export function removeMint(mintUrl: string): void {
-  const all = readProofs();
-  delete all[walletMintKey(mintUrl)];
-  writeJSON(PROOFS_KEY, all);
-  notify();
-}
-
 /** Subscribe to proof changes from this tab (custom event) and other tabs (storage event). */
 export function onProofsChange(cb: () => void): () => void {
   const onStorage = (e: StorageEvent) => {
