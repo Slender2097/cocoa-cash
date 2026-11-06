@@ -20,7 +20,7 @@
 // MIT License
 
 import { Amount, MintQuoteState, MeltQuoteState, CheckStateEnum, getEncodedToken } from "@cashu/cashu-ts";
-import type { MintPreview, MeltPreview, SwapPreview, Proof, Wallet, P2PKOptions, ProofLike } from "@cashu/cashu-ts";
+import type { MintPreview, MeltPreview, SwapPreview, Proof, Wallet, P2PKOptions, ProofLike, MeltQuoteBolt11Response } from "@cashu/cashu-ts";
 import { addProofs, removeProofs, normalizeMint, readJSON, writeJSON, sumProofs, toStoredProof } from "./storage";
 import type { StoredProof } from "./storage";
 import { getWallet, serializeOutputs, deserializeOutputs, restoreOutputs, errText } from "./outputs";
@@ -251,9 +251,29 @@ export async function advanceMint(id: string): Promise<MintOp> {
 // Melt (NUT-05, change via NUT-08)
 // ---------------------------------------------------------------------------
 
-export async function startMelt(mint: string, invoice: string, spendable: StoredProof[]): Promise<MeltOp> {
+/**
+ * NUT-05 step 1: ask the mint for a bolt11 melt quote, so the user can see the
+ * amount and fee reserve before anything happens. Nothing is reserved,
+ * journaled or paid here.
+ */
+export async function quoteMelt(mint: string, invoice: string): Promise<MeltQuoteBolt11Response> {
   const wallet = await getWallet(mint);
-  const quote = await wallet.createMeltQuoteBolt11(invoice.trim());
+  return wallet.createMeltQuoteBolt11(invoice.trim());
+}
+
+/** NUT-05 step 2: pay a quote from quoteMelt() that the user confirmed. */
+export async function startMelt(
+  mint: string,
+  invoice: string,
+  quote: MeltQuoteBolt11Response,
+  spendable: StoredProof[]
+): Promise<MeltOp> {
+  if (quote.expiry && Date.now() > quote.expiry * 1000) {
+    throw new Error("This quote expired. Paste the invoice again to get a fresh one.");
+  }
+  // A quote is paid at most once from this wallet: resume an existing record instead of reserving again.
+  if (getOp(quote.quote)) return advanceMelt(quote.quote);
+  const wallet = await getWallet(mint);
   const amount = Amount.from(quote.amount).toNumber();
   const feeReserve = Amount.from(quote.fee_reserve).toNumber();
   const { send } = wallet.selectProofsToSend(spendable.map(toProofLike), amount + feeReserve, true);

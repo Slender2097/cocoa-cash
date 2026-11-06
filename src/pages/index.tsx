@@ -36,6 +36,7 @@ export default function Home() {
     balance,
     handleSetMint,
     handleMint,
+    handleMeltQuote,
     handleMelt,
     handleSwapSend,
     handleSwapClaim,
@@ -106,9 +107,13 @@ export default function Home() {
 
   const run = async (type: FlowType, input: string) => {
     if (type === "mint") return handleMint(input);
-    if (type === "melt") return handleMelt(input);
+    if (type === "melt") return handleMeltQuote(input); // NUT-05 quote first; paying needs a confirm
     if (type === "send") return handleSwapSend(input);
     return handleSwapClaim(input);
+  };
+
+  const confirm = async (type: FlowType, ref: string) => {
+    if (type === "melt") return handleMelt(ref);
   };
 
   const openFlow = (type: FlowType) => {
@@ -177,6 +182,7 @@ export default function Home() {
           dataOutput={dataOutput}
           isProcessing={isProcessing}
           run={run}
+          confirm={confirm}
           onScan={(apply) => setScanApply(() => apply)}
           onClose={close}
         />

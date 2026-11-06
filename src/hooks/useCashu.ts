@@ -9,12 +9,15 @@
 // which could lose funds on a dropped reply or a closed tab.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Amount } from "@cashu/cashu-ts";
+import type { MeltQuoteBolt11Response } from "@cashu/cashu-ts";
 import useProofStorage from "./useProofStorage";
 import type { ProofStorage } from "./useProofStorage";
 import { getWallet, errText } from "@/lib/cashu/outputs";
 import { readProofs, walletMintKey, normalizeMint } from "@/lib/cashu/storage";
 import {
   startMint,
+  quoteMelt,
   startMelt,
   startSend,
   startReceive,
@@ -31,7 +34,7 @@ export type DataOutput = {
   details?: string;
   message?: string;
   success?: string;
-  type?: "mint" | "melt" | "swap-send" | "swap-claim";
+  type?: "mint" | "melt-quote" | "melt" | "swap-send" | "swap-claim";
   amount?: number;
   invoice?: string;
   quoteId?: string;
@@ -54,7 +57,10 @@ export type UseCashu = {
   hydrated: boolean;
   handleSetMint: (url: string, opts?: { silent?: boolean }) => Promise<void>;
   handleMint: (amount: string | number) => Promise<void>;
-  handleMelt: (invoice: string) => Promise<void>;
+  /** NUT-05 step 1: quote only. The result (type "melt-quote") carries amount and fee reserve to confirm. */
+  handleMeltQuote: (invoice: string) => Promise<void>;
+  /** NUT-05 step 2: pay a quote the user confirmed. */
+  handleMelt: (quoteId: string) => Promise<void>;
   handleSwapSend: (amount: string | number) => Promise<void>;
   handleSwapClaim: (token: string) => Promise<void>;
   setDataOutput: (d: DataOutput) => void;
@@ -150,13 +156,40 @@ export default function useCashu(): UseCashu {
     }
   };
 
-  const handleMelt = async (invoiceInput: string) => {
+  // Quotes the user has seen but not yet confirmed (in memory only: nothing is reserved yet).
+  const meltQuotes = useRef(new Map<string, { mint: string; invoice: string; quote: MeltQuoteBolt11Response }>());
+
+  const handleMeltQuote = async (invoiceInput: string) => {
     const invoice = invoiceInput?.trim();
     if (!invoice) return setDataOutput({ error: "Please enter a Bolt11 invoice" });
     if (!guard()) return;
     setIsProcessing(true);
     try {
-      const op = await startMelt(activeMint, invoice, spendable()); // NUT-05 + NUT-08 change
+      const quote = await quoteMelt(activeMint, invoice); // NUT-05 quote: nothing is reserved or paid yet
+      meltQuotes.current.set(quote.quote, { mint: activeMint, invoice, quote });
+      setDataOutput({
+        status: "Quote ready",
+        type: "melt-quote",
+        quoteId: quote.quote,
+        amount: Amount.from(quote.amount).toNumber(),
+        feeReserve: Amount.from(quote.fee_reserve).toNumber(),
+      });
+    } catch (err) {
+      setDataOutput({ error: "Could not get a quote", details: errText(err) });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleMelt = async (quoteId: string) => {
+    const confirmed = meltQuotes.current.get(quoteId);
+    if (!confirmed) return setDataOutput({ error: "Melt failed", details: "This quote is no longer available. Paste the invoice again." });
+    if (!guard()) return;
+    setIsProcessing(true);
+    try {
+      const { mint, invoice, quote } = confirmed;
+      const op = await startMelt(mint, invoice, quote, readProofs()[walletMintKey(mint)] || []); // NUT-05 + NUT-08 change
+      meltQuotes.current.delete(quoteId);
       if (op.state === "DONE") {
         setDataOutput({
           status: "Success ✓",
@@ -239,6 +272,7 @@ export default function useCashu(): UseCashu {
     hydrated,
     handleSetMint,
     handleMint,
+    handleMeltQuote,
     handleMelt,
     handleSwapSend,
     handleSwapClaim,
