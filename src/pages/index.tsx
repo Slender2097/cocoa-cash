@@ -201,6 +201,7 @@ export default function Home() {
         <SeedVault
           mnemonic={mnemonic}
           backedUp={securityLevel >= 2}
+          proofsByMint={proofsByMint}
           onBackedUp={() => setSecurityLevel(2)}
           onRestore={restoreFromSeed}
           onClose={close}

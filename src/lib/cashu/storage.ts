@@ -142,6 +142,22 @@ export function onProofsChange(cb: () => void): () => void {
   };
 }
 
+let persistAsked = false;
+
+/**
+ * Ask the browser not to evict this origin's storage under pressure or
+ * inactivity: the proofs live only here. Once per page load; the browser may
+ * grant, deny or prompt, and nothing depends on the answer.
+ */
+export function requestPersistentStorage(): void {
+  if (persistAsked || typeof navigator === "undefined" || !navigator.storage?.persist) return;
+  persistAsked = true;
+  navigator.storage
+    .persisted()
+    .then((already) => (already ? true : navigator.storage.persist()))
+    .catch(() => {});
+}
+
 export function rememberMint(mintUrl: string): void {
   // Show the mint in the full wallet's mint list (Navbar `savedMints`).
   const saved = readJSON<string[]>("savedMints", []);

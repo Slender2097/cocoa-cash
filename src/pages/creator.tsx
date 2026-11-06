@@ -20,7 +20,7 @@ import {
 } from "@/lib/tip/config";
 import { generateSecretKey, getPublicKey, npubEncode, nsecEncode, nsecDecode } from "@/lib/tip/nut18";
 import { seal, unseal } from "@/lib/tip/seal";
-import { readProofs, sumProofs, rememberMint, PROOFS_EVENT } from "@/lib/cashu/storage";
+import { readProofs, sumProofs, rememberMint, requestPersistentStorage, PROOFS_EVENT } from "@/lib/cashu/storage";
 import { getWallet, toHex, fromHex, errText } from "@/lib/cashu/outputs";
 import { INBOX, listInbox, syncInbox, claimAll } from "@/lib/tip/flows";
 import type { InboxRecord } from "@/lib/tip/flows";
@@ -241,6 +241,7 @@ export default function CreatorPage() {
     setConfig(loadConfig());
     setOrigin(window.location.origin);
     /* eslint-enable react-hooks/set-state-in-effect */
+    requestPersistentStorage(); // claimed tips land in this browser's proof store
     const bump = () => setTick((t) => t + 1);
     const onStorage = (e: StorageEvent) => {
       if (e.key === "proofsByMint" || e.key === INBOX) bump();

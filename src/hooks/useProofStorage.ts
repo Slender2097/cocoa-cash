@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import * as bip39 from "bip39";
-import { readProofs, onProofsChange, walletMintKey, removeMint, sumProofs } from "@/lib/cashu/storage";
+import { readProofs, onProofsChange, walletMintKey, removeMint, sumProofs, requestPersistentStorage } from "@/lib/cashu/storage";
 import type { ProofsByMint, StoredProof } from "@/lib/cashu/storage";
 
 const ls = {
@@ -43,6 +43,7 @@ export default function useProofStorage() {
     setProofsByMint(readProofs());
     setHydrated(true);
     /* eslint-enable react-hooks/set-state-in-effect */
+    requestPersistentStorage();
     return onProofsChange(() => setProofsByMint(readProofs()));
   }, []);
 
