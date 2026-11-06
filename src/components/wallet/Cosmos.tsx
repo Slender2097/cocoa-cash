@@ -1,10 +1,11 @@
 // src/components/wallet/Cosmos.tsx
 // Fixed deep-space backdrop: two soft light refractions and a faint organic
-// circuit with a few pulses travelling along it. The whole field breathes
-// very slowly and the refractions drift; now and then a distant glow crosses
-// the dark or a circuit node flares and sends out a ripple. Everything stays
-// dim and away from the middle, so nothing competes with the balance, and it
-// goes quieter while the wallet rests. Purely decorative.
+// circuit with a few pulses travelling along it. Light moves through it at a
+// large scale and a slow pace: the field breathes, the refractions wander far
+// and swell like distant pulses, soft glows travel along the edges, and
+// circuit nodes flare and send out a ripple. Everything stays dim and away
+// from the middle, so nothing competes with the balance, and it goes quieter
+// while the wallet rests. Purely decorative.
 // MIT License
 
 import type { CSSProperties } from "react";
@@ -51,13 +52,13 @@ export default function Cosmos({ resting = false }: { resting?: boolean }) {
         <div className={fx.driftA}>
           <div
             className="anim-breathe absolute -top-1/4 left-1/2 h-[70vmax] w-[70vmax] -translate-x-1/2 rounded-full blur-3xl"
-            style={{ background: "radial-gradient(circle, rgba(79,244,198,0.16) 0%, rgba(79,244,198,0) 60%)" }}
+            style={{ background: "radial-gradient(circle, rgba(79,244,198,0.21) 0%, rgba(79,244,198,0) 60%)" }}
           />
         </div>
         <div className={fx.driftB}>
           <div
             className="absolute -bottom-1/3 -right-1/4 h-[60vmax] w-[60vmax] rounded-full blur-3xl"
-            style={{ background: "radial-gradient(circle, rgba(163,255,224,0.08) 0%, rgba(163,255,224,0) 60%)" }}
+            style={{ background: "radial-gradient(circle, rgba(163,255,224,0.12) 0%, rgba(163,255,224,0) 60%)" }}
           />
         </div>
         <svg className="absolute inset-0 h-full w-full" viewBox="0 0 1024 1024" preserveAspectRatio="xMidYMid slice">

@@ -1,6 +1,9 @@
 /* src/components/wallet/Cosmos.module.css
-   Ambient life for the backdrop. Every animation here moves only transform
-   and opacity, runs for tens of seconds, and stays far dimmer than the core.
+   Ambient life for the backdrop, at a large scale and a slow pace: the field
+   breathes, its two big light patches wander far and swell like distant
+   pulses, soft glows travel along the edges, and circuit nodes flare and send
+   out a ripple. Every animation here moves only transform and opacity, runs
+   for tens of seconds, and stays far dimmer than the core.
    Palette only: neon #4ff4c6 · pulse #a3ffe0.
    MIT License */
 
@@ -18,34 +21,42 @@
 @keyframes space {
   0%,
   100% {
-    opacity: 0.93;
+    opacity: 0.9;
     transform: scale(1);
   }
   50% {
     opacity: 1;
-    transform: scale(1.02);
+    transform: scale(1.03);
   }
 }
 
-/* The two light refractions wander on long, unrelated loops. */
+/* The two big light patches wander on long, unrelated loops, and each swells
+   now and then like a distant pulse (a second animation, on opacity only). */
 .driftA,
 .driftB {
   position: absolute;
   inset: 0;
 }
 .driftA {
-  animation: drift-a 38s ease-in-out infinite;
+  animation:
+    drift-a 44s ease-in-out infinite,
+    swell 13s ease-in-out -2s infinite;
 }
 .driftB {
-  animation: drift-b 47s ease-in-out infinite;
+  animation:
+    drift-b 56s ease-in-out infinite,
+    swell 17s ease-in-out -9s infinite;
 }
 @keyframes drift-a {
   0%,
   100% {
     transform: translate3d(0, 0, 0);
   }
-  50% {
-    transform: translate3d(4vmax, 3vmax, 0);
+  35% {
+    transform: translate3d(7vmax, 5vmax, 0);
+  }
+  70% {
+    transform: translate3d(-5vmax, 3vmax, 0);
   }
 }
 @keyframes drift-b {
@@ -53,8 +64,23 @@
   100% {
     transform: translate3d(0, 0, 0);
   }
-  50% {
-    transform: translate3d(-5vmax, -3vmax, 0);
+  40% {
+    transform: translate3d(-9vmax, -6vmax, 0);
+  }
+  75% {
+    transform: translate3d(-3vmax, -9vmax, 0);
+  }
+}
+@keyframes swell {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  40% {
+    opacity: 1;
+  }
+  75% {
+    opacity: 0.55;
   }
 }
 
@@ -72,28 +98,28 @@
    paths keep to the edges, away from the balance. */
 .wisp {
   position: absolute;
-  width: 38vmax;
-  height: 38vmax;
+  width: 50vmax;
+  height: 50vmax;
   border-radius: 9999px;
   opacity: 0;
-  background: radial-gradient(circle, rgba(79, 244, 198, 0.12) 0%, rgba(79, 244, 198, 0.05) 36%, rgba(79, 244, 198, 0) 66%);
+  background: radial-gradient(circle, rgba(79, 244, 198, 0.15) 0%, rgba(79, 244, 198, 0.06) 36%, rgba(79, 244, 198, 0) 66%);
 }
 .wispA {
   /* along the top, left to right */
-  left: -19vmax;
-  top: -12vmax;
+  left: -25vmax;
+  top: -17vmax;
   animation: wisp-a 26s ease-in-out -3s infinite;
 }
 .wispB {
   /* along the bottom, right to left */
-  right: -19vmax;
-  bottom: -14vmax;
+  right: -25vmax;
+  bottom: -19vmax;
   animation: wisp-b 31s ease-in-out -15s infinite;
 }
 .wispC {
   /* up the left edge */
-  left: -24vmax;
-  top: 55vh;
+  left: -31vmax;
+  top: 50vh;
   animation: wisp-c 37s ease-in-out -26s infinite;
 }
 @keyframes wisp-a {
@@ -101,13 +127,13 @@
     opacity: 0;
     transform: translate3d(0, 0, 0);
   }
-  10% {
+  12% {
     opacity: 1;
   }
-  32%,
+  38%,
   100% {
     opacity: 0;
-    transform: translate3d(65vw, 8vh, 0);
+    transform: translate3d(70vw, 9vh, 0);
   }
 }
 @keyframes wisp-b {
@@ -115,13 +141,13 @@
     opacity: 0;
     transform: translate3d(0, 0, 0);
   }
-  10% {
+  12% {
     opacity: 0.9;
   }
-  30%,
+  36%,
   100% {
     opacity: 0;
-    transform: translate3d(-60vw, -6vh, 0);
+    transform: translate3d(-66vw, -7vh, 0);
   }
 }
 @keyframes wisp-c {
@@ -129,13 +155,13 @@
     opacity: 0;
     transform: translate3d(0, 0, 0);
   }
-  12% {
-    opacity: 0.8;
+  14% {
+    opacity: 0.85;
   }
-  34%,
+  40%,
   100% {
     opacity: 0;
-    transform: translate3d(3vw, -30vh, 0);
+    transform: translate3d(4vw, -34vh, 0);
   }
 }
 
@@ -157,17 +183,18 @@
   animation-timing-function: ease-out;
 }
 .flare::before {
-  width: 28px;
-  height: 28px;
-  margin: -14px 0 0 -14px;
-  background: radial-gradient(circle, rgba(163, 255, 224, 0.55) 0%, rgba(79, 244, 198, 0.18) 40%, rgba(79, 244, 198, 0) 70%);
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+  background: radial-gradient(circle, rgba(163, 255, 224, 0.6) 0%, rgba(79, 244, 198, 0.2) 40%, rgba(79, 244, 198, 0) 70%);
   animation-name: flare;
 }
 .flare::after {
-  width: 14px;
-  height: 14px;
-  margin: -7px 0 0 -7px;
-  border: 1px solid rgba(163, 255, 224, 0.45);
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border: 1px solid rgba(163, 255, 224, 0.5);
+  box-shadow: 0 0 10px rgba(79, 244, 198, 0.3);
   animation-name: ripple;
 }
 @keyframes flare {
@@ -179,10 +206,10 @@
     opacity: 1;
     transform: scale(1);
   }
-  12%,
+  14%,
   100% {
     opacity: 0;
-    transform: scale(1.15);
+    transform: scale(1.2);
   }
 }
 @keyframes ripple {
@@ -191,12 +218,12 @@
     transform: scale(0.6);
   }
   3% {
-    opacity: 0.7;
+    opacity: 0.75;
   }
-  16%,
+  20%,
   100% {
     opacity: 0;
-    transform: scale(5.5);
+    transform: scale(8);
   }
 }
 

@@ -1,10 +1,28 @@
 /* src/components/wallet/Orbs.module.css
-   The orbs breathe: a soft glow swells and fades around each one on its own
-   slow rhythm, so the row feels alive without pulling the eye from the
-   balance. The glow sits on its own layer, so the hover and press scale on
-   the orb itself is untouched. Only opacity and transform move.
+   The orbs carry a calm idle energy: each one swells a little while its glow
+   pulses, on its own slow rhythm, so the row drifts in and out of step
+   without pulling the eye from the balance. The swell sits on a wrapper, so
+   the hover and press scale on the orb itself is untouched, and the glow on
+   its own layer. Only opacity and transform move.
    Palette only: neon #4ff4c6 · pulse #a3ffe0.
    MIT License */
+
+/* The swell. --every and --at (cycle and phase) are set per orb and shared
+   with the glow below, so both peak together. */
+.breath {
+  display: block;
+  border-radius: 9999px;
+  animation: swell var(--every, 6s) ease-in-out var(--at, 0s) infinite;
+}
+@keyframes swell {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.035);
+  }
+}
 
 /* Holds the glow, and fades it down while the wallet rests. */
 .calm {
@@ -22,29 +40,32 @@
   position: absolute;
   inset: -1px;
   border-radius: 9999px;
-  border: 1px solid rgba(163, 255, 224, 0.3);
+  border: 1px solid rgba(163, 255, 224, 0.42);
   box-shadow:
-    0 0 26px -4px rgba(79, 244, 198, 0.6),
-    inset 0 0 16px rgba(163, 255, 224, 0.2);
+    0 0 34px -2px rgba(79, 244, 198, 0.7),
+    inset 0 0 18px rgba(163, 255, 224, 0.28);
   opacity: 0;
   animation: aura var(--every, 6s) ease-in-out var(--at, 0s) infinite;
 }
 @keyframes aura {
   0%,
   100% {
-    opacity: 0;
+    opacity: 0.12;
     transform: scale(1);
   }
   50% {
-    opacity: 0.85;
-    transform: scale(1.035);
+    opacity: 1;
+    transform: scale(1.04);
   }
 }
 
-/* Reduced motion: no breathing, only a faint steady glow. */
+/* Reduced motion: no swell or pulse, only a faint steady glow. */
 @media (prefers-reduced-motion: reduce) {
+  .breath {
+    animation: none;
+  }
   .aura {
     animation: none;
-    opacity: 0.3;
+    opacity: 0.35;
   }
 }

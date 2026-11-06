@@ -1,5 +1,6 @@
 // src/components/ui/Check.tsx
-// Round status mark: ok, error or waiting. Waiting pulses on the same tight
+// Round status mark: ok, error or waiting. Waiting works like a small power
+// core: a fast current runs around its edge and it pulses on the same tight
 // beat as the balance core while an action runs.
 // MIT License
 
@@ -14,6 +15,7 @@ export function Check({ tone = "ok" }: { tone?: "ok" | "error" | "wait" }) {
     >
       {tone === "wait" ? (
         <>
+          <span aria-hidden className={fx.current} />
           <span aria-hidden className={fx.ring} />
           <span aria-hidden className={fx.ring} />
           <span className="h-8 w-8 animate-spin rounded-full border-2 border-[#a3ffe0]/20 border-t-[#a3ffe0]" />

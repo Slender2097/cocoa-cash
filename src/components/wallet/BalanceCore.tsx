@@ -1,14 +1,21 @@
 // src/components/wallet/BalanceCore.tsx
 // The glowing balance at the center of the wallet, plus the mint it belongs to.
 //
-// The core behaves like a living instrument:
-// - Presence: the rings lean toward a nearby pointer or finger, the light in
-//   the lens follows it, the rim brightens on that side, and the breathing
-//   shows more the closer it comes (useCorePointer).
-// - Mood: dim until a mint is connected, awake once it is (brighter core, a
-//   slow current running around the track), a tight pulse while an action
-//   runs, and a slower, deeper breath after a while without input. Opening a
-//   panel draws a brief focus and then a soft dim; closing it wakes the core.
+// The core is the wallet's power core, a living instrument:
+// - Energy: while awake a current runs through the rings (bright heads with
+//   long tails, the rim and track one way, the dashed ring the other), the
+//   rim glows, and every 16 to 18 s the rim flares once so it never looks
+//   asleep.
+// - Presence: the rings lean toward a nearby pointer or finger and light up
+//   hard on that side, two light streaks chase it around the rim, a beam runs
+//   out to it and the lens flares toward it. When it leaves, the light
+//   lingers a moment and settles (useCorePointer).
+// - Mood: dim until a mint is connected. Connecting, or the first touch after
+//   a rest, sends one wave of light out through the rings. While an action
+//   runs the current speeds up and the lens pulses tight and bright; after a
+//   while without input it breathes slower and deeper. Opening a panel
+//   tightens the rings and brightens the lens for a moment, then softens it;
+//   closing the panel wakes it with a short flare.
 // - Reactions: when the balance goes up (a mint, a claim, a tip claimed in
 //   another tab) a bright wave leaves the rings and sparks run around the rim;
 //   when it goes down (a melt, a send) the rings draw in and the glow dips.
@@ -30,10 +37,12 @@ type Flow = "in" | "out";
 type Beat = { id: number; dir: Flow | null };
 /** How alive the core looks when nothing else is going on. */
 type Mood = "asleep" | "awake" | "resting";
+/** A wake-up moment: a wave out through the rings, or a short flare. */
+type WakeKind = "surge" | "flare";
 
 const SETTLE_MS = 80; // changes that land together play as one reaction
 const REVEAL_MS = 420; // after a panel closes, let the core wake before it reacts
-const WAKE_MS = 1200; // length of the wake-up glow
+const WAKE_MS: Record<WakeKind, number> = { surge: 1800, flare: 1000 }; // wake-up moments, longest animation
 const PLAY_MS: Record<Flow, number> = { in: 2000, out: 1500 }; // longest animation, delays included
 
 // Sparks that race along the rim when sats come in: start angle, distance, delay.
@@ -164,17 +173,19 @@ export default function BalanceCore({
     return () => window.clearTimeout(t);
   }, [beat]);
 
-  // Waking up: a panel closes, someone stirs after a rest, or the mint comes online.
+  // Waking up. The mint coming online, or someone returning after a rest,
+  // sends a wave out through the rings; a panel closing gets a short flare.
   const [was, setWas] = useState({ covered, resting, connected });
-  const [wake, setWake] = useState({ id: 0, on: false });
+  const [wake, setWake] = useState<{ id: number; kind: WakeKind | null }>({ id: 0, kind: null });
   if (was.covered !== covered || was.resting !== resting || was.connected !== connected) {
-    const woke = (was.covered && !covered) || (was.resting && !resting) || (!was.connected && connected);
+    const surge = (was.resting && !resting) || (!was.connected && connected);
+    const flare = was.covered && !covered;
     setWas({ covered, resting, connected });
-    if (woke) setWake((w) => ({ id: w.id + 1, on: true }));
+    if (surge || flare) setWake((w) => ({ id: w.id + 1, kind: surge ? "surge" : "flare" }));
   }
   useEffect(() => {
-    if (!wake.on) return;
-    const t = window.setTimeout(() => setWake((w) => ({ ...w, on: false })), WAKE_MS);
+    if (!wake.kind) return;
+    const t = window.setTimeout(() => setWake((w) => ({ ...w, kind: null })), WAKE_MS[wake.kind]);
     return () => window.clearTimeout(t);
   }, [wake]);
 
@@ -194,7 +205,7 @@ export default function BalanceCore({
         data-flow={flow}
         data-busy={processing || undefined}
         data-covered={covered || undefined}
-        data-waking={wake.on || undefined}
+        data-waking={wake.kind ?? undefined}
       >
         {/* Everything but the number: dims and focuses with the mood. */}
         <div aria-hidden className={fx.stage}>
@@ -220,6 +231,8 @@ export default function BalanceCore({
                 {/* outer ring and dotted track: slow spin, slow breath */}
                 <div className="anim-spin-slow absolute inset-0">
                   <div className={`${fx.breathe} h-full w-full`}>
+                    {/* the powered rim: a steady glow along the outer ring */}
+                    <span className={fx.rimGlow} />
                     <svg key={beat.id} viewBox="0 0 200 200" className={`${fx.outer} h-full w-full`}>
                       <defs>
                         <linearGradient id={ringGradient} x1="0" y1="0" x2="1" y2="1">
@@ -237,10 +250,23 @@ export default function BalanceCore({
                 <div className={fx.near}>
                   <span className={fx.aura} />
                 </div>
-                {/* the rim brightens on the pointer's side */}
-                <span className={fx.arc} />
-                {/* a slow current around the track while awake */}
-                <span className={fx.current} />
+                {/* the energy current: rim and track clockwise, dashed ring the other way */}
+                <span className={fx.current}>
+                  <span className={fx.head} />
+                </span>
+                <span className={fx.counter} />
+                {/* a faster current while an action runs */}
+                <span className={fx.rush} />
+                {/* the rim flares once every 16 to 18 s */}
+                <span className={fx.ringFlare} />
+                {/* the side facing the pointer lights up: rings, a beam, the lens rim */}
+                <span className={fx.arc}>
+                  <span className={fx.beam} />
+                  <span className={fx.lensFlare} />
+                </span>
+                {/* light streaks that chase the pointer around the rim */}
+                <span className={`${fx.streak} ${fx.streakA}`} />
+                <span className={`${fx.streak} ${fx.streakB}`} />
                 {/* dashed segments, counter-rotating, with a soft glow under each dash */}
                 <div className="anim-spin-rev absolute inset-[9%]">
                   <svg key={beat.id} viewBox="0 0 200 200" className={`${fx.dash} h-full w-full`}>
@@ -248,6 +274,8 @@ export default function BalanceCore({
                     <circle cx="100" cy="100" r="98" fill="none" stroke="rgba(163,255,224,0.45)" strokeWidth="0.9" strokeDasharray="40 18 6 18" />
                   </svg>
                 </div>
+                {/* connecting or returning after a rest: one wave of light out through the rings */}
+                {wake.kind === "surge" && !reduced && <span key={`surge${wake.id}`} className={fx.surge} />}
                 {/* the reaction's waves and sparks, under the lens */}
                 {flow && !reduced && (
                   <React.Fragment key={`wave${beat.id}`}>
@@ -276,6 +304,8 @@ export default function BalanceCore({
               {flow && <span key={`lens${beat.id}`} className={`absolute inset-0 rounded-full ${flow === "in" ? fx.charge : fx.drain}`} />}
               <span className={fx.pulse} />
               <span className={fx.pulse} />
+              {/* the lens brightens for a moment: a panel opening, a wake-up */}
+              <span key={`flash${wake.id}`} className={fx.lensFlash} />
               <span key={`wake${wake.id}`} className={fx.wake} />
             </div>
           </div>
