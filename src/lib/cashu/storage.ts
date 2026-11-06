@@ -4,8 +4,10 @@
 // wallet has always used, so existing wallets keep working.
 //
 // All writes are read-modify-write against localStorage (never "save my
-// in-memory copy"), so two hook instances or two tabs cannot overwrite each
-// other's proofs with a stale copy.
+// in-memory copy"), so two hook instances cannot overwrite each other's
+// proofs with a stale copy. localStorage is not transactional across tabs,
+// so the wallet operations that call these helpers run under the cross-tab
+// wallet lock (./lock.ts).
 // MIT License
 
 import type { Proof, ProofLike, SerializedDLEQ } from "@cashu/cashu-ts";
@@ -122,13 +124,6 @@ export function removeProofs(mintUrl: string, proofs: Array<{ secret: string }>)
   notify();
 }
 
-export function removeMint(mintUrl: string): void {
-  const all = readProofs();
-  delete all[walletMintKey(mintUrl)];
-  writeJSON(PROOFS_KEY, all);
-  notify();
-}
-
 /** Subscribe to proof changes from this tab (custom event) and other tabs (storage event). */
 export function onProofsChange(cb: () => void): () => void {
   const onStorage = (e: StorageEvent) => {
@@ -141,6 +136,26 @@ export function onProofsChange(cb: () => void): () => void {
     window.removeEventListener("storage", onStorage);
   };
 }
+
+let persistAsked = false;
+
+/**
+ * Ask the browser not to evict this origin's storage under pressure or
+ * inactivity: the proofs live only here. Once per page load; the browser may
+ * grant, deny or prompt, and nothing depends on the answer.
+ */
+export function requestPersistentStorage(): void {
+  if (persistAsked || typeof navigator === "undefined" || !navigator.storage?.persist) return;
+  persistAsked = true;
+  navigator.storage
+    .persisted()
+    .then((already) => (already ? true : navigator.storage.persist()))
+    .catch(() => {});
+}
+
+/** Is this mint in the user's own mints list (`savedMints`)? */
+export const isSavedMint = (mintUrl: string): boolean =>
+  readJSON<string[]>("savedMints", []).map(normalizeMint).includes(normalizeMint(mintUrl));
 
 export function rememberMint(mintUrl: string): void {
   // Show the mint in the full wallet's mint list (Navbar `savedMints`).

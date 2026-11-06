@@ -9,13 +9,17 @@ import Sheet from "./Sheet";
 import { QrPlate } from "@/components/ui/QrPlate";
 import { CopyButton } from "@/components/ui/CopyButton";
 import { Check } from "@/components/ui/Check";
+import { MintWarning } from "@/components/ui/MintWarning";
+import { mintLabel } from "@/lib/utils/mintLabel";
 import type { FlowType } from "./Orbs";
 import type { DataOutput } from "@/hooks/useCashu";
 
 type Stage =
   | { k: "input" }
-  | { k: "working" }
+  | { k: "working"; label: string }
   | { k: "invoice"; invoice: string }
+  | { k: "confirm-melt"; quoteId: string; amount: number; feeReserve: number }
+  | { k: "confirm-claim"; token: string; mint: string; amount: number; trusted: boolean }
   | { k: "token"; token: string; amount: number }
   | { k: "done"; title: string; lines: string[] }
   | { k: "error"; title: string; detail: string };
@@ -33,6 +37,7 @@ export default function FlowSheet({
   dataOutput,
   isProcessing,
   run,
+  confirm,
   onScan,
   onClose,
 }: {
@@ -41,6 +46,8 @@ export default function FlowSheet({
   dataOutput: DataOutput;
   isProcessing: boolean;
   run: (type: FlowType, input: string) => Promise<void>;
+  /** Second step of a two-step action (pay a confirmed melt quote, claim from a mint the user trusts). */
+  confirm: (type: FlowType, ref: string) => Promise<void>;
   onScan: (apply: (text: string) => void) => void;
   onClose: () => void;
 }) {
@@ -60,6 +67,10 @@ export default function FlowSheet({
       setStage({ k: "error", title: d.error, detail: d.details || d.message || "" });
     } else if (type === "mint" && d.invoice) {
       setStage({ k: "invoice", invoice: d.invoice });
+    } else if (type === "melt" && d.type === "melt-quote" && d.quoteId) {
+      setStage({ k: "confirm-melt", quoteId: d.quoteId, amount: d.amount ?? 0, feeReserve: d.feeReserve ?? 0 });
+    } else if (type === "claim" && d.type === "claim-check" && d.token && d.mint) {
+      setStage({ k: "confirm-claim", token: d.token, mint: d.mint, amount: d.amount ?? 0, trusted: false });
     } else if (type === "mint" && d.type === "mint") {
       setStage({ k: "done", title: "Sats received", lines: [`+${d.amount ?? ""} sat`] });
     } else if (type === "melt" && d.type === "melt") {
@@ -69,7 +80,9 @@ export default function FlowSheet({
     } else if (type === "send" && d.token) {
       setStage({ k: "token", token: d.token, amount: d.amount || 0 });
     } else if (type === "claim" && d.type === "swap-claim") {
-      setStage({ k: "done", title: "Ecash claimed", lines: [`+${d.amount} sat`] });
+      const lines = [`+${d.amount} sat`];
+      if (d.spent) lines.push(`${d.spent} sat in this token were already spent`);
+      setStage({ k: "done", title: "Ecash claimed", lines });
     }
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [dataOutput, type, stage.k]);
@@ -80,8 +93,14 @@ export default function FlowSheet({
     if (!isAmount && !v) return setHint(type === "melt" ? "Paste or scan a Lightning invoice" : "Paste or scan a Cashu token");
     setHint("");
     baseline.current = dataOutput;
-    setStage({ k: "working" });
+    setStage({ k: "working", label: type === "melt" ? "Getting a quote…" : "Talking to the mint…" });
     await run(type, v);
+  };
+
+  const confirmStep = async (ref: string, label: string) => {
+    baseline.current = dataOutput;
+    setStage({ k: "working", label });
+    await confirm(type, ref);
   };
 
   const paste = async () => {
@@ -151,7 +170,7 @@ export default function FlowSheet({
           )}
           {hint && <p className="text-center text-sm text-amber-200">{hint}</p>}
           <button className="btn-neon" disabled={isProcessing}>
-            {type === "mint" ? "Create invoice" : type === "melt" ? "Pay invoice" : type === "send" ? "Create token" : "Claim"}
+            {type === "mint" ? "Create invoice" : type === "melt" ? "Review payment" : type === "send" ? "Create token" : "Claim"}
           </button>
         </form>
       )}
@@ -159,7 +178,58 @@ export default function FlowSheet({
       {stage.k === "working" && (
         <div className="py-10 text-center">
           <Check tone="wait" />
-          <p className="mt-5 text-[#e8fff7]/70">{type === "melt" ? "Paying…" : "Talking to the mint…"}</p>
+          <p className="mt-5 text-[#e8fff7]/70">{stage.label}</p>
+        </div>
+      )}
+
+      {stage.k === "confirm-melt" && (
+        <div className="space-y-5 text-center" data-testid="melt-confirm">
+          <p className="text-sm uppercase tracking-[0.3em] text-[#a3ffe0]/80">Confirm payment</p>
+          <p className="text-5xl font-extralight tabular-nums text-[#e8fff7]">
+            {stage.amount.toLocaleString("en-US")} <span className="text-base uppercase tracking-[0.3em] text-[#a3ffe0]/70">sat</span>
+          </p>
+          <div className="space-y-1 text-sm text-[#e8fff7]/70">
+            <p>Lightning fee reserve: up to {stage.feeReserve.toLocaleString("en-US")} sat</p>
+            <p>Held for this payment: {(stage.amount + stage.feeReserve).toLocaleString("en-US")} sat</p>
+            <p className="text-xs text-[#e8fff7]/45">Any fee reserve the mint does not use comes back as change.</p>
+          </div>
+          {stage.amount + stage.feeReserve > balance && (
+            <p className="text-sm text-amber-200">Not enough balance: you have {balance.toLocaleString("en-US")} sat.</p>
+          )}
+          <button
+            className="btn-neon"
+            disabled={isProcessing || stage.amount + stage.feeReserve > balance}
+            onClick={() => confirmStep(stage.quoteId, "Paying…")}
+          >
+            Pay {stage.amount.toLocaleString("en-US")} sat
+          </button>
+          <button className="btn-ghost w-full" onClick={reset}>
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {stage.k === "confirm-claim" && (
+        <div className="space-y-5 text-center" data-testid="claim-confirm">
+          <p className="text-sm uppercase tracking-[0.3em] text-[#a3ffe0]/80">Unknown mint</p>
+          <p className="break-all text-lg text-[#e8fff7]">{mintLabel(stage.mint)}</p>
+          <p className="text-sm text-[#e8fff7]/60">The token says {stage.amount.toLocaleString("en-US")} sat.</p>
+          <MintWarning
+            mints={[stage.mint]}
+            context="claim"
+            trusted={stage.trusted}
+            onTrust={(trusted) => setStage({ ...stage, trusted })}
+          />
+          <button
+            className="btn-neon"
+            disabled={isProcessing || !stage.trusted}
+            onClick={() => confirmStep(stage.token, "Talking to the mint…")}
+          >
+            Claim from this mint
+          </button>
+          <button className="btn-ghost w-full" onClick={reset}>
+            Cancel
+          </button>
         </div>
       )}
 

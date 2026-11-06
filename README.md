@@ -46,6 +46,8 @@ Open `/creator` in the **same browser** and unlock it. The board checks for new 
 
 **Back up your receiving key.** Use "Show receiving key" on the board. You don't need a backup to start receiving, but without one, tips that are still in flight can't be claimed if this browser's data is lost. You can restore the key on a new browser during setup.
 
+**Sealed export.** "Download sealed export" saves an encrypted copy of your proofs and receiving key (PBKDF2-SHA256 + AES-GCM, passphrase of 12+ characters, typed twice). To use it, open `/creator` in any browser and use **Open a sealed export**: it unseals the file in the page and shows one Cashu token per mint to paste into Claim in the full wallet, plus the receiving key. Anyone with the file and its passphrase can spend those sats.
+
 ### How it works (protocol)
 
 Nothing here is custom. Everything is defined by a Cashu NUT or a Nostr NIP:
@@ -70,6 +72,15 @@ The full wallet and the tip board share the same write-ahead journal in `src/lib
 | Claim token / tip | NUT-03 (+ NUT-11) | token inputs + outputs | NUT-07 SPENT → NUT-09 restore. If NUT-09 returns nothing, the token was spent by someone else and is marked failed |
 
 Open operations resume automatically when the wallet connects. Proofs are stored in `localStorage` and amounts are plain numbers. cashu-ts v4 `Amount` objects are converted in one place: `src/lib/cashu/storage.ts`.
+
+Every operation that changes proofs or the journal runs under one cross-tab Web Lock (`src/lib/cashu/lock.ts`), so two open tabs take turns instead of overwriting each other's writes.
+
+### Backups
+
+Your sats are the proofs in this browser. The 12-word phrase in the Seed vault does **not** restore them yet (NUT-13 deterministic secrets are not implemented). To keep a copy:
+
+- **Seed vault → Back up balance** shows each mint's proofs as one standard Cashu token (NUT-00) to copy or download. To restore, paste a token into Claim here or in any Cashu wallet. A backup is a snapshot: Claim skips proofs the mint reports as already spent (NUT-07) and keeps the rest.
+- The wallet asks the browser for persistent storage (`navigator.storage.persist()`), so it is less likely to be cleared under storage pressure. Clearing site data still deletes everything.
 
 ## Development
 

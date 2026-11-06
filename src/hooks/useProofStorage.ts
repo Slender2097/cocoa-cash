@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import * as bip39 from "bip39";
-import { readProofs, onProofsChange, walletMintKey, removeMint, sumProofs } from "@/lib/cashu/storage";
+import { readProofs, onProofsChange, walletMintKey, sumProofs, requestPersistentStorage } from "@/lib/cashu/storage";
 import type { ProofsByMint, StoredProof } from "@/lib/cashu/storage";
 
 const ls = {
@@ -43,6 +43,7 @@ export default function useProofStorage() {
     setProofsByMint(readProofs());
     setHydrated(true);
     /* eslint-enable react-hooks/set-state-in-effect */
+    requestPersistentStorage();
     return onProofsChange(() => setProofsByMint(readProofs()));
   }, []);
 
@@ -62,13 +63,6 @@ export default function useProofStorage() {
     setSecurityLevel(2);
     return true;
   }, [setSecurityLevel]);
-
-  const resetWallet = useCallback(() => {
-    if (confirm("ARE YOU SURE? This will PERMANENTLY delete everything.")) {
-      localStorage.clear();
-      window.location.reload();
-    }
-  }, []);
 
   const switchMint = useCallback((newUrl: string) => {
     if (!newUrl || typeof newUrl !== "string") return;
@@ -90,10 +84,8 @@ export default function useProofStorage() {
     currentProofs,
     balance,
     proofsByMint,
-    resetMint: removeMint,
     securityLevel,
     setSecurityLevel,
-    resetWallet,
     mnemonic,
     restoreFromSeed,
   };

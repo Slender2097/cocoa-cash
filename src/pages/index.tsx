@@ -36,6 +36,7 @@ export default function Home() {
     balance,
     handleSetMint,
     handleMint,
+    handleMeltQuote,
     handleMelt,
     handleSwapSend,
     handleSwapClaim,
@@ -55,12 +56,14 @@ export default function Home() {
   const closeScanner = useCallback(() => setScanApply(null), []);
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- one-time hydration from localStorage */
     if (localStorage.getItem("cocoa-welcome-accepted") !== "true") setWelcome(true);
     try {
       setTransactions(JSON.parse(localStorage.getItem("transaction_history") || "[]"));
     } catch {
       // keep empty
     }
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
   // Results that arrive while no action panel is open (mint connect, a paid
@@ -73,7 +76,7 @@ export default function Home() {
     else if (dataOutput.status?.includes("Mint connected")) next = { text: `Connected to ${mintLabel(activeMint)}`, tone: "ok" };
     else if (dataOutput.type === "mint") next = { text: `+${dataOutput.amount} sat received`, tone: "ok" };
     if (!next) return;
-    setToast(next);
+    setToast(next); // eslint-disable-line react-hooks/set-state-in-effect -- mirrors the hook's latest result
     const t = setTimeout(() => setToast(null), 4000);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -94,6 +97,7 @@ export default function Home() {
     if (d.type !== "swap-send" && !d.status?.toLowerCase().includes("success")) return;
     recorded.current = d;
     const tx: Tx = { id: Date.now(), type: d.type, amount: d.amount * (SIGN[d.type] || 1), mint: activeMint, timestamp: new Date().toLocaleString() };
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- records the hook's latest result
     setTransactions((prev) => {
       const next = [tx, ...prev];
       localStorage.setItem("transaction_history", JSON.stringify(next));
@@ -103,9 +107,14 @@ export default function Home() {
 
   const run = async (type: FlowType, input: string) => {
     if (type === "mint") return handleMint(input);
-    if (type === "melt") return handleMelt(input);
+    if (type === "melt") return handleMeltQuote(input); // NUT-05 quote first; paying needs a confirm
     if (type === "send") return handleSwapSend(input);
     return handleSwapClaim(input);
+  };
+
+  const confirm = async (type: FlowType, ref: string) => {
+    if (type === "melt") return handleMelt(ref);
+    if (type === "claim") return handleSwapClaim(ref, { trustMint: true });
   };
 
   const openFlow = (type: FlowType) => {
@@ -174,6 +183,7 @@ export default function Home() {
           dataOutput={dataOutput}
           isProcessing={isProcessing}
           run={run}
+          confirm={confirm}
           onScan={(apply) => setScanApply(() => apply)}
           onClose={close}
         />
@@ -192,6 +202,7 @@ export default function Home() {
         <SeedVault
           mnemonic={mnemonic}
           backedUp={securityLevel >= 2}
+          proofsByMint={proofsByMint}
           onBackedUp={() => setSecurityLevel(2)}
           onRestore={restoreFromSeed}
           onClose={close}

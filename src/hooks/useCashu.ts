@@ -9,15 +9,19 @@
 // which could lose funds on a dropped reply or a closed tab.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Amount, getTokenMetadata } from "@cashu/cashu-ts";
+import type { MeltQuoteBolt11Response } from "@cashu/cashu-ts";
 import useProofStorage from "./useProofStorage";
 import type { ProofStorage } from "./useProofStorage";
 import { getWallet, errText } from "@/lib/cashu/outputs";
-import { readProofs, walletMintKey, normalizeMint } from "@/lib/cashu/storage";
+import { normalizeMint, isSavedMint, rememberMint, amountToNumber } from "@/lib/cashu/storage";
 import {
   startMint,
+  quoteMelt,
   startMelt,
   startSend,
   startReceive,
+  dropSpentProofs,
   recoverOpen,
   openOps,
   getOp,
@@ -31,7 +35,9 @@ export type DataOutput = {
   details?: string;
   message?: string;
   success?: string;
-  type?: "mint" | "melt" | "swap-send" | "swap-claim";
+  type?: "mint" | "melt-quote" | "melt" | "swap-send" | "claim-check" | "swap-claim";
+  /** claim-check: the token's mint, which is not in the user's mints list. */
+  mint?: string;
   amount?: number;
   invoice?: string;
   quoteId?: string;
@@ -39,6 +45,8 @@ export type DataOutput = {
   keysId?: string;
   receivedProofs?: number;
   receivedCount?: number;
+  /** Sats in a claimed token that the mint already reported spent (skipped). */
+  spent?: number;
   preimage?: string;
   feeReserve?: number;
   changeReceived?: number;
@@ -54,9 +62,13 @@ export type UseCashu = {
   hydrated: boolean;
   handleSetMint: (url: string, opts?: { silent?: boolean }) => Promise<void>;
   handleMint: (amount: string | number) => Promise<void>;
-  handleMelt: (invoice: string) => Promise<void>;
+  /** NUT-05 step 1: quote only. The result (type "melt-quote") carries amount and fee reserve to confirm. */
+  handleMeltQuote: (invoice: string) => Promise<void>;
+  /** NUT-05 step 2: pay a quote the user confirmed. */
+  handleMelt: (quoteId: string) => Promise<void>;
   handleSwapSend: (amount: string | number) => Promise<void>;
-  handleSwapClaim: (token: string) => Promise<void>;
+  /** Claim a token. A mint not in savedMints first returns a "claim-check" result to confirm with { trustMint: true }. */
+  handleSwapClaim: (token: string, opts?: { trustMint?: boolean }) => Promise<void>;
   setDataOutput: (d: DataOutput) => void;
   /** The single proof-storage instance. Pages must use this one. */
   storage: ProofStorage;
@@ -69,9 +81,9 @@ export default function useCashu(): UseCashu {
   const [isProcessing, setIsProcessing] = useState(false);
   const [dataOutput, setDataOutput] = useState<DataOutput>(null);
   const busy = useRef(false);
-  busy.current = isProcessing;
-
-  const spendable = () => readProofs()[walletMintKey(activeMint)] || [];
+  useEffect(() => {
+    busy.current = isProcessing;
+  }, [isProcessing]);
 
   const handleSetMint = useCallback(
     async (input: string, opts: { silent?: boolean } = {}) => {
@@ -109,7 +121,8 @@ export default function useCashu(): UseCashu {
     const tick = async () => {
       const before = openOps(activeMint).filter((o) => o.kind === "mint").map((o) => o.id);
       if (!openOps(activeMint).length) return;
-      await recoverOpen(activeMint).catch(() => {});
+      // Only runs while this tab can take the wallet lock; otherwise wait for the next tick.
+      await recoverOpen(activeMint, undefined, { background: true }).catch(() => {});
       if (stopped) return;
       for (const id of before) {
         const op = getOp(id) as MintOp | null;
@@ -148,13 +161,40 @@ export default function useCashu(): UseCashu {
     }
   };
 
-  const handleMelt = async (invoiceInput: string) => {
+  // Quotes the user has seen but not yet confirmed (in memory only: nothing is reserved yet).
+  const meltQuotes = useRef(new Map<string, { mint: string; invoice: string; quote: MeltQuoteBolt11Response }>());
+
+  const handleMeltQuote = async (invoiceInput: string) => {
     const invoice = invoiceInput?.trim();
     if (!invoice) return setDataOutput({ error: "Please enter a Bolt11 invoice" });
     if (!guard()) return;
     setIsProcessing(true);
     try {
-      const op = await startMelt(activeMint, invoice, spendable()); // NUT-05 + NUT-08 change
+      const quote = await quoteMelt(activeMint, invoice); // NUT-05 quote: nothing is reserved or paid yet
+      meltQuotes.current.set(quote.quote, { mint: activeMint, invoice, quote });
+      setDataOutput({
+        status: "Quote ready",
+        type: "melt-quote",
+        quoteId: quote.quote,
+        amount: Amount.from(quote.amount).toNumber(),
+        feeReserve: Amount.from(quote.fee_reserve).toNumber(),
+      });
+    } catch (err) {
+      setDataOutput({ error: "Could not get a quote", details: errText(err) });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleMelt = async (quoteId: string) => {
+    const confirmed = meltQuotes.current.get(quoteId);
+    if (!confirmed) return setDataOutput({ error: "Melt failed", details: "This quote is no longer available. Paste the invoice again." });
+    if (!guard()) return;
+    setIsProcessing(true);
+    try {
+      const { mint, invoice, quote } = confirmed;
+      const op = await startMelt(mint, invoice, quote); // NUT-05 + NUT-08 change, under the wallet lock
+      meltQuotes.current.delete(quoteId);
       if (op.state === "DONE") {
         setDataOutput({
           status: "Success ✓",
@@ -187,7 +227,7 @@ export default function useCashu(): UseCashu {
     if (!guard()) return;
     setIsProcessing(true);
     try {
-      const op = await startSend(activeMint, amount, spendable()); // NUT-03, token persisted
+      const op = await startSend(activeMint, amount); // NUT-03, token persisted, under the wallet lock
       if (op.state !== "DONE" || !op.token) {
         throw new Error(op.error || "The mint did not answer. The token will appear in History once recovered.");
       }
@@ -205,20 +245,41 @@ export default function useCashu(): UseCashu {
     }
   };
 
-  const handleSwapClaim = async (tokenInput: string) => {
+  const handleSwapClaim = async (tokenInput: string, opts: { trustMint?: boolean } = {}) => {
     const token = tokenInput.trim();
     if (!token) return setDataOutput({ error: "Enter a token string" });
+    if (!opts.trustMint) {
+      // A mint the user never added: show it and ask first, before talking to it.
+      let meta;
+      try {
+        meta = getTokenMetadata(token);
+      } catch (error) {
+        return setDataOutput({ error: "Claim failed", message: errText(error) });
+      }
+      if (!isSavedMint(meta.mint)) {
+        return setDataOutput({
+          status: "Check the mint",
+          type: "claim-check",
+          mint: normalizeMint(meta.mint),
+          amount: amountToNumber(meta.amount),
+          token,
+        });
+      }
+    }
     setIsProcessing(true);
     try {
-      const op = await startReceive(token); // NUT-03 swap; final only on success
+      const { token: claimable, spent } = await dropSpentProofs(token); // NUT-07 filter only
+      const op = await startReceive(claimable); // NUT-03 swap; final only on success
       if (op.state === "FAILED") throw new Error(op.error || "Token could not be claimed");
       if (op.state !== "DONE") throw new Error(op.error || "The mint did not answer. The claim will be retried automatically.");
+      rememberMint(op.mint); // the user claimed from it: list it under Mints from now on
       if (normalizeMint(op.mint) !== normalizeMint(activeMint)) switchMint(op.mint);
       setDataOutput({
         status: " Claim successful",
         type: "swap-claim",
         amount: op.amount,
         receivedCount: 1,
+        spent,
         message: `Added ${op.amount} sat to your balance`,
       });
     } catch (error) {
@@ -237,6 +298,7 @@ export default function useCashu(): UseCashu {
     hydrated,
     handleSetMint,
     handleMint,
+    handleMeltQuote,
     handleMelt,
     handleSwapSend,
     handleSwapClaim,

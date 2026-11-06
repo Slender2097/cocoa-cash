@@ -7,6 +7,9 @@
 //
 // Recovery: blinding data is persisted before every mint call; lost replies
 // are recovered with NUT-09 (see src/lib/cashu/journal.ts).
+//
+// Writes to the outbox, the inbox and the wallet run under the cross-tab
+// wallet lock (src/lib/cashu/lock.ts); network-only steps run outside it.
 // MIT License
 
 import { Amount, getTokenMetadata, getEncodedToken, getP2PKExpectedWitnessPubkeys, CheckStateEnum, MintQuoteState } from "@cashu/cashu-ts";
@@ -16,7 +19,8 @@ import { readJSON, writeJSON, sumProofs, normalizeMint, toStoredProof } from "@/
 import type { StoredProof } from "@/lib/cashu/storage";
 import { getWallet, fromHex, errText } from "@/lib/cashu/outputs";
 import type { SerializedOutput } from "@/lib/cashu/outputs";
-import { prepareMintOutputs, issueMint, startReceive, advanceReceive, getOp } from "@/lib/cashu/journal";
+import { prepareMintOutputs, issueMint, startReceiveUnlocked, advanceReceiveUnlocked, getOp } from "@/lib/cashu/journal";
+import { withWalletLock } from "@/lib/cashu/lock";
 import { p2pkPubkey } from "./config";
 import { wrapPayload, publishWrap, fetchPayloads } from "./nut18";
 import type { Nut18Payload } from "./nut18";
@@ -69,19 +73,21 @@ export type OutboxRecord = {
 export async function createLightningTip(a: { mint: string; amount: number; pubkey: string; relays: string[]; memo?: string }) {
   const wallet = await getWallet(a.mint);
   const quote = await wallet.createMintQuoteBolt11(a.amount, a.memo || undefined);
-  return put<OutboxRecord>(OUTBOX, quote.quote, {
-    kind: "lightning",
-    mint: normalizeMint(a.mint),
-    amount: a.amount,
-    pubkey: a.pubkey,
-    relays: a.relays,
-    memo: a.memo || "",
-    quote: quote.quote,
-    invoice: quote.request,
-    expiry: quote.expiry ? quote.expiry * 1000 : null,
-    state: "UNPAID",
-    createdAt: Date.now(),
-  });
+  return withWalletLock(async () =>
+    put<OutboxRecord>(OUTBOX, quote.quote, {
+      kind: "lightning",
+      mint: normalizeMint(a.mint),
+      amount: a.amount,
+      pubkey: a.pubkey,
+      relays: a.relays,
+      memo: a.memo || "",
+      quote: quote.quote,
+      invoice: quote.request,
+      expiry: quote.expiry ? quote.expiry * 1000 : null,
+      state: "UNPAID",
+      createdAt: Date.now(),
+    })
+  );
 }
 
 /**
@@ -90,7 +96,9 @@ export async function createLightningTip(a: { mint: string; amount: number; pubk
  *   MINTING -> NUT-04 mint (NUT-09 restore on a lost reply) -> MINTED
  *   MINTED/SENDING -> NUT-18 payload over NIP-17 -> DELIVERED
  */
-export async function advanceTip(id: string): Promise<OutboxRecord> {
+export const advanceTip = (id: string) => withWalletLock(() => advanceTipUnlocked(id));
+
+async function advanceTipUnlocked(id: string): Promise<OutboxRecord> {
   let rec = get<OutboxRecord>(OUTBOX, id);
   if (!rec) throw new Error("Unknown tip");
 
@@ -153,19 +161,21 @@ export async function createTokenTip(a: { token: string; mints: string[]; pubkey
   const payload: Nut18Payload = { mint, unit: "sat", proofs };
   if (a.memo) payload.memo = a.memo;
   const wrap = wrapPayload(a.pubkey, payload);
-  put<OutboxRecord>(OUTBOX, wrap.id, {
-    kind: "token",
-    mint,
-    amount: sumProofs(proofs),
-    pubkey: a.pubkey,
-    relays: a.relays,
-    memo: a.memo || "",
-    proofs,
-    wrap,
-    state: "SENDING",
-    createdAt: Date.now(),
+  return withWalletLock(async () => {
+    put<OutboxRecord>(OUTBOX, wrap.id, {
+      kind: "token",
+      mint,
+      amount: sumProofs(proofs),
+      pubkey: a.pubkey,
+      relays: a.relays,
+      memo: a.memo || "",
+      proofs,
+      wrap,
+      state: "SENDING",
+      createdAt: Date.now(),
+    });
+    return advanceTipUnlocked(wrap.id);
   });
-  return advanceTip(wrap.id);
 }
 
 /** Visitor records for this creator that still need work (resume on reload). */
@@ -195,25 +205,27 @@ export const listInbox = () => list<InboxRecord>(INBOX);
 
 /** Pull NUT-18 payloads from relays into the inbox (write-once per event). */
 export async function syncInbox(sk: Uint8Array, relays: string[], acceptedMints: string[]): Promise<number> {
-  const items = await fetchPayloads(sk, relays);
+  const items = await fetchPayloads(sk, relays); // relays only: no lock needed yet
   const accepted = acceptedMints.map(normalizeMint);
-  let added = 0;
-  for (const it of items) {
-    if (get<InboxRecord>(INBOX, it.id)) continue;
-    const mint = normalizeMint(it.payload.mint);
-    const ok = accepted.includes(mint) && (it.payload.unit || "sat") === "sat";
-    put<InboxRecord>(INBOX, it.id, {
-      payload: it.payload,
-      mint,
-      memo: typeof it.payload.memo === "string" ? it.payload.memo.slice(0, 280) : "",
-      offered: sumProofs(it.payload.proofs),
-      createdAt: it.createdAt,
-      state: ok ? "NEW" : "FAILED",
-      error: ok ? null : "Mint or unit not accepted by this tip button",
-    });
-    added++;
-  }
-  return added;
+  return withWalletLock(async () => {
+    let added = 0;
+    for (const it of items) {
+      if (get<InboxRecord>(INBOX, it.id)) continue;
+      const mint = normalizeMint(it.payload.mint);
+      const ok = accepted.includes(mint) && (it.payload.unit || "sat") === "sat";
+      put<InboxRecord>(INBOX, it.id, {
+        payload: it.payload,
+        mint,
+        memo: typeof it.payload.memo === "string" ? it.payload.memo.slice(0, 280) : "",
+        offered: sumProofs(it.payload.proofs),
+        createdAt: it.createdAt,
+        state: ok ? "NEW" : "FAILED",
+        error: ok ? null : "Mint or unit not accepted by this tip button",
+      });
+      added++;
+    }
+    return added;
+  });
 }
 
 function lockedToSomeoneElse(proofs: ProofLike[], myXonly: string): boolean {
@@ -229,8 +241,8 @@ function lockedToSomeoneElse(proofs: ProofLike[], myXonly: string): boolean {
   return false;
 }
 
-/** Claim one inbox record via a journal `receive` op (NUT-03 swap, signed for NUT-11). */
-export async function claimRecord(id: string, skHex: string): Promise<InboxRecord | null> {
+/** Claim one inbox record via a journal `receive` op (NUT-03 swap, signed for NUT-11). Caller holds the wallet lock. */
+async function claimRecordUnlocked(id: string, skHex: string): Promise<InboxRecord | null> {
   let rec = get<InboxRecord>(INBOX, id);
   if (!rec || rec.state === "RECEIVED" || rec.state === "FAILED") return rec;
 
@@ -241,9 +253,9 @@ export async function claimRecord(id: string, skHex: string): Promise<InboxRecor
     const proofs: Proof[] = rec.payload.proofs.map((p) => ({ ...p, amount: Amount.from(p.amount) }));
     const token = getEncodedToken({ mint: rec.mint, unit: "sat", proofs });
     rec = put<InboxRecord>(INBOX, id, { opId: `tip_${id}`, state: "SWAPPING" });
-    await startReceive(token, { privkey: skHex, id: `tip_${id}` });
+    await startReceiveUnlocked(token, { privkey: skHex, id: `tip_${id}` });
   } else {
-    await advanceReceive(rec.opId, skHex);
+    await advanceReceiveUnlocked(rec.opId, skHex);
   }
 
   const op = getOp(rec.opId!);
@@ -261,12 +273,15 @@ export async function claimRecord(id: string, skHex: string): Promise<InboxRecor
   return put<InboxRecord>(INBOX, id, { error: op.error || null });
 }
 
-export async function claimAll(skHex: string): Promise<void> {
-  for (const r of listInbox().filter((x) => x.state === "NEW" || x.state === "SWAPPING")) {
-    try {
-      await claimRecord(r.id, skHex);
-    } catch (e) {
-      put<InboxRecord>(INBOX, r.id, { error: errText(e) });
+/** Claim every pending inbox record, holding the wallet lock for the whole round. */
+export function claimAll(skHex: string): Promise<void> {
+  return withWalletLock(async () => {
+    for (const r of listInbox().filter((x) => x.state === "NEW" || x.state === "SWAPPING")) {
+      try {
+        await claimRecordUnlocked(r.id, skHex);
+      } catch (e) {
+        put<InboxRecord>(INBOX, r.id, { error: errText(e) });
+      }
     }
-  }
+  });
 }
