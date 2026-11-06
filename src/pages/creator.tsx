@@ -10,6 +10,7 @@ import Head from "next/head";
 import Link from "next/link";
 import Image from "next/image";
 import Cosmos from "@/components/wallet/Cosmos";
+import { MintWarning } from "@/components/ui/MintWarning";
 import {
   KNOWN_MINTS,
   DEFAULT_RELAYS,
@@ -170,15 +171,7 @@ function SettingsForm({
           </button>
         ))}
       </div>
-      {unknown.length > 0 && (
-        <div className="text-sm text-yellow-200 bg-yellow-500/10 border border-yellow-400/30 rounded-2xl p-3">
-          ⚠️ {unknown.join(", ")} {unknown.length > 1 ? "are" : "is"} not in cocoa.cash&apos;s short list of known mints. The
-          mint holds the sats behind every tip, so only use a mint you trust.
-          <label className="flex items-center gap-2 mt-2">
-            <input type="checkbox" checked={trust} onChange={(e) => setTrust(e.target.checked)} /> I trust this mint
-          </label>
-        </div>
-      )}
+      {unknown.length > 0 && <MintWarning mints={unknown} context="tip" trusted={trust} onTrust={setTrust} />}
       <div className="grid grid-cols-2 gap-3">
         <label className="text-sm">
           Amount in sats (empty = any)

@@ -114,6 +114,7 @@ export default function Home() {
 
   const confirm = async (type: FlowType, ref: string) => {
     if (type === "melt") return handleMelt(ref);
+    if (type === "claim") return handleSwapClaim(ref, { trustMint: true });
   };
 
   const openFlow = (type: FlowType) => {

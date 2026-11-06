@@ -9,12 +9,12 @@
 // which could lose funds on a dropped reply or a closed tab.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Amount } from "@cashu/cashu-ts";
+import { Amount, getTokenMetadata } from "@cashu/cashu-ts";
 import type { MeltQuoteBolt11Response } from "@cashu/cashu-ts";
 import useProofStorage from "./useProofStorage";
 import type { ProofStorage } from "./useProofStorage";
 import { getWallet, errText } from "@/lib/cashu/outputs";
-import { normalizeMint } from "@/lib/cashu/storage";
+import { normalizeMint, isSavedMint, rememberMint, amountToNumber } from "@/lib/cashu/storage";
 import {
   startMint,
   quoteMelt,
@@ -35,7 +35,9 @@ export type DataOutput = {
   details?: string;
   message?: string;
   success?: string;
-  type?: "mint" | "melt-quote" | "melt" | "swap-send" | "swap-claim";
+  type?: "mint" | "melt-quote" | "melt" | "swap-send" | "claim-check" | "swap-claim";
+  /** claim-check: the token's mint, which is not in the user's mints list. */
+  mint?: string;
   amount?: number;
   invoice?: string;
   quoteId?: string;
@@ -65,7 +67,8 @@ export type UseCashu = {
   /** NUT-05 step 2: pay a quote the user confirmed. */
   handleMelt: (quoteId: string) => Promise<void>;
   handleSwapSend: (amount: string | number) => Promise<void>;
-  handleSwapClaim: (token: string) => Promise<void>;
+  /** Claim a token. A mint not in savedMints first returns a "claim-check" result to confirm with { trustMint: true }. */
+  handleSwapClaim: (token: string, opts?: { trustMint?: boolean }) => Promise<void>;
   setDataOutput: (d: DataOutput) => void;
   /** The single proof-storage instance. Pages must use this one. */
   storage: ProofStorage;
@@ -242,15 +245,34 @@ export default function useCashu(): UseCashu {
     }
   };
 
-  const handleSwapClaim = async (tokenInput: string) => {
+  const handleSwapClaim = async (tokenInput: string, opts: { trustMint?: boolean } = {}) => {
     const token = tokenInput.trim();
     if (!token) return setDataOutput({ error: "Enter a token string" });
+    if (!opts.trustMint) {
+      // A mint the user never added: show it and ask first, before talking to it.
+      let meta;
+      try {
+        meta = getTokenMetadata(token);
+      } catch (error) {
+        return setDataOutput({ error: "Claim failed", message: errText(error) });
+      }
+      if (!isSavedMint(meta.mint)) {
+        return setDataOutput({
+          status: "Check the mint",
+          type: "claim-check",
+          mint: normalizeMint(meta.mint),
+          amount: amountToNumber(meta.amount),
+          token,
+        });
+      }
+    }
     setIsProcessing(true);
     try {
       const { token: claimable, spent } = await dropSpentProofs(token); // NUT-07 filter only
       const op = await startReceive(claimable); // NUT-03 swap; final only on success
       if (op.state === "FAILED") throw new Error(op.error || "Token could not be claimed");
       if (op.state !== "DONE") throw new Error(op.error || "The mint did not answer. The claim will be retried automatically.");
+      rememberMint(op.mint); // the user claimed from it: list it under Mints from now on
       if (normalizeMint(op.mint) !== normalizeMint(activeMint)) switchMint(op.mint);
       setDataOutput({
         status: " Claim successful",

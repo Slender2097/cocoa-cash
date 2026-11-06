@@ -160,6 +160,10 @@ export function requestPersistentStorage(): void {
     .catch(() => {});
 }
 
+/** Is this mint in the user's own mints list (`savedMints`)? */
+export const isSavedMint = (mintUrl: string): boolean =>
+  readJSON<string[]>("savedMints", []).map(normalizeMint).includes(normalizeMint(mintUrl));
+
 export function rememberMint(mintUrl: string): void {
   // Show the mint in the full wallet's mint list (Navbar `savedMints`).
   const saved = readJSON<string[]>("savedMints", []);

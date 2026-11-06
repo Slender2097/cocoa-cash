@@ -9,6 +9,8 @@ import Sheet from "./Sheet";
 import { QrPlate } from "@/components/ui/QrPlate";
 import { CopyButton } from "@/components/ui/CopyButton";
 import { Check } from "@/components/ui/Check";
+import { MintWarning } from "@/components/ui/MintWarning";
+import { mintLabel } from "@/lib/utils/mintLabel";
 import type { FlowType } from "./Orbs";
 import type { DataOutput } from "@/hooks/useCashu";
 
@@ -17,6 +19,7 @@ type Stage =
   | { k: "working"; label: string }
   | { k: "invoice"; invoice: string }
   | { k: "confirm-melt"; quoteId: string; amount: number; feeReserve: number }
+  | { k: "confirm-claim"; token: string; mint: string; amount: number; trusted: boolean }
   | { k: "token"; token: string; amount: number }
   | { k: "done"; title: string; lines: string[] }
   | { k: "error"; title: string; detail: string };
@@ -43,7 +46,7 @@ export default function FlowSheet({
   dataOutput: DataOutput;
   isProcessing: boolean;
   run: (type: FlowType, input: string) => Promise<void>;
-  /** Second step of a two-step action (pay a confirmed melt quote). */
+  /** Second step of a two-step action (pay a confirmed melt quote, claim from a mint the user trusts). */
   confirm: (type: FlowType, ref: string) => Promise<void>;
   onScan: (apply: (text: string) => void) => void;
   onClose: () => void;
@@ -66,6 +69,8 @@ export default function FlowSheet({
       setStage({ k: "invoice", invoice: d.invoice });
     } else if (type === "melt" && d.type === "melt-quote" && d.quoteId) {
       setStage({ k: "confirm-melt", quoteId: d.quoteId, amount: d.amount ?? 0, feeReserve: d.feeReserve ?? 0 });
+    } else if (type === "claim" && d.type === "claim-check" && d.token && d.mint) {
+      setStage({ k: "confirm-claim", token: d.token, mint: d.mint, amount: d.amount ?? 0, trusted: false });
     } else if (type === "mint" && d.type === "mint") {
       setStage({ k: "done", title: "Sats received", lines: [`+${d.amount ?? ""} sat`] });
     } else if (type === "melt" && d.type === "melt") {
@@ -197,6 +202,30 @@ export default function FlowSheet({
             onClick={() => confirmStep(stage.quoteId, "Paying…")}
           >
             Pay {stage.amount.toLocaleString("en-US")} sat
+          </button>
+          <button className="btn-ghost w-full" onClick={reset}>
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {stage.k === "confirm-claim" && (
+        <div className="space-y-5 text-center" data-testid="claim-confirm">
+          <p className="text-sm uppercase tracking-[0.3em] text-[#a3ffe0]/80">Unknown mint</p>
+          <p className="break-all text-lg text-[#e8fff7]">{mintLabel(stage.mint)}</p>
+          <p className="text-sm text-[#e8fff7]/60">The token says {stage.amount.toLocaleString("en-US")} sat.</p>
+          <MintWarning
+            mints={[stage.mint]}
+            context="claim"
+            trusted={stage.trusted}
+            onTrust={(trusted) => setStage({ ...stage, trusted })}
+          />
+          <button
+            className="btn-neon"
+            disabled={isProcessing || !stage.trusted}
+            onClick={() => confirmStep(stage.token, "Talking to the mint…")}
+          >
+            Claim from this mint
           </button>
           <button className="btn-ghost w-full" onClick={reset}>
             Cancel
