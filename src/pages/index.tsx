@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Head from "next/head";
 import Image from "next/image";
 import useCashu from "@/hooks/useCashu";
+import useIdle from "@/hooks/useIdle";
 import Cosmos from "@/components/wallet/Cosmos";
 import BalanceCore from "@/components/wallet/BalanceCore";
 import Orbs from "@/components/wallet/Orbs";
@@ -28,6 +29,10 @@ type Panel = { k: "flow"; type: FlowType } | { k: "mints"; note?: string } | { k
 
 const SIGN: Record<string, number> = { mint: 1, "swap-claim": 1, melt: -1, "swap-send": -1 };
 
+// After this long without input the wallet goes quiet (slower, deeper glow),
+// and it wakes at the first touch, key or pointer move.
+const REST_AFTER_MS = 30_000;
+
 export default function Home() {
   const {
     walletReady,
@@ -46,6 +51,8 @@ export default function Home() {
   // Same storage instance as useCashu (see the note there).
   const { activeMint, securityLevel, setSecurityLevel, mnemonic, restoreFromSeed, proofsByMint } = storage;
 
+  // Quiet only while nobody is around and nothing is running.
+  const resting = useIdle(REST_AFTER_MS) && !isProcessing;
   const [panel, setPanel] = useState<Panel>(null);
   const [scanApply, setScanApply] = useState<((t: string) => void) | null>(null);
   const [welcome, setWelcome] = useState(false);
@@ -134,9 +141,10 @@ export default function Home() {
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <meta name="theme-color" content="#07110d" />
       </Head>
-      <Cosmos />
+      <Cosmos resting={resting} />
 
-      <div className="mx-auto flex min-h-[100dvh] max-w-xl flex-col px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))]">
+      {/* overflow-x-clip: the core's glow and waves may reach past the page, never make it scroll sideways. */}
+      <div className="mx-auto flex min-h-[100dvh] max-w-xl flex-col overflow-x-clip px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))]">
         <header className="flex items-center justify-between">
           <button onClick={() => setPanel({ k: "menu" })} aria-label="Menu" className="flex items-center gap-2 rounded-2xl p-1 transition active:scale-95">
             <Image src="/jaguar-logo.png" alt="cocoa.cash" width={80} height={60} className="h-14 w-auto drop-shadow-[0_0_14px_rgba(79,244,198,0.7)]" priority />
@@ -158,10 +166,12 @@ export default function Home() {
             balance={balance || 0}
             mint={activeMint}
             connected={walletReady && !!activeMint}
+            processing={isProcessing}
             covered={!!panel || !!scanApply || welcome}
+            resting={resting}
             onMints={() => setPanel({ k: "mints" })}
           />
-          <Orbs disabled={false} onPick={openFlow} />
+          <Orbs disabled={false} resting={resting} onPick={openFlow} />
         </main>
       </div>
 

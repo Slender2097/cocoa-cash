@@ -1,7 +1,10 @@
 /* src/components/wallet/BalanceCore.module.css
-   Motion for the balance core: the idle breath, and the reaction when sats
-   come in or go out. Only transform and opacity move (plus the number's glow
-   during a reaction), so the browser can run it all on the compositor.
+   Motion for the balance core: its presence (leaning toward the pointer), its
+   moods (asleep, awake, busy, covered, resting), its idle breath and drift,
+   and the reaction when sats come in or go out. Only transform and opacity
+   move (plus the number's glow during a reaction), so the browser can run it
+   all on the compositor. The number is never inside .stage, so it never
+   leans, drifts or dims with the rest.
    Palette only: neon #4ff4c6 · pulse #a3ffe0 · text #e8fff7 · void #07110d.
    MIT License */
 
@@ -10,7 +13,132 @@
   --pull: cubic-bezier(0.55, 0, 0.75, 0.45); /* gathers speed inward */
 }
 
+/* Everything but the number. Mood changes fade its opacity and scale. */
+.stage {
+  position: absolute;
+  inset: 0;
+  transition:
+    opacity 0.9s ease,
+    transform 0.9s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+/* Inside the stage: carries the brief focus when a panel opens, and the
+   perspective the rings lean in. */
+.focus {
+  position: absolute;
+  inset: 0;
+  perspective: 900px;
+}
+
+/* ---- presence ----------------------------------------------------------------
+   useCorePointer writes --px/--py (lean, -1..1), --lean, --angle and --near
+   (0..1) on the core. Only transforms and opacity read them, and the 3D
+   transforms (or will-change, for the flat layers) keep these layers
+   composited, so following the pointer never repaints the rings. */
+
+/* Rings turn to face the pointer and lean a few px toward it. */
+.tilt {
+  position: absolute;
+  inset: 0;
+  transform: translate3d(calc(var(--px, 0) * 5px), calc(var(--py, 0) * 5px), 0) rotateX(calc(var(--py, 0) * -10deg))
+    rotateY(calc(var(--px, 0) * 10deg));
+}
+/* Depth: the halo slides the other way, the lens a little with the rings. */
+.haloDepth {
+  transform: translate3d(calc(var(--px, 0) * -8px), calc(var(--py, 0) * -8px), 0);
+}
+.lensDepth {
+  transform: translate3d(calc(var(--px, 0) * 3px), calc(var(--py, 0) * 3px), 0);
+}
+
+/* The rim brightens on the pointer's side. */
+.arc {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: conic-gradient(from -70deg, rgba(163, 255, 224, 0) 0deg, rgba(163, 255, 224, 0.8) 70deg, rgba(163, 255, 224, 0) 140deg);
+  mask-image: radial-gradient(
+    closest-side,
+    transparent 94.6%,
+    rgba(0, 0, 0, 0.35) 95.8%,
+    #000 96.6%,
+    #000 97.4%,
+    rgba(0, 0, 0, 0.35) 98.2%,
+    transparent 99.3%
+  );
+  transform: rotate(calc(var(--angle, 0) * 1deg));
+  opacity: calc(var(--lean, 0) * 0.9);
+  will-change: transform, opacity;
+}
+
+/* The light in the lens follows the pointer. */
+.glintClip {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  overflow: hidden;
+}
+.glint {
+  position: absolute;
+  inset: 12%;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(163, 255, 224, 0.16) 0%, rgba(163, 255, 224, 0.06) 38%, rgba(163, 255, 224, 0) 68%);
+  transform: translate3d(calc(var(--px, 0) * 32%), calc(var(--py, 0) * 32%), 0);
+  opacity: var(--near, 0);
+}
+
+/* The breath shows more as the pointer comes close: a glow on the rim that
+   breathes with the ring, deeper than it, faded in by --near. */
+.near {
+  position: absolute;
+  inset: 0;
+  opacity: var(--near, 0);
+  will-change: opacity;
+}
+.aura {
+  position: absolute;
+  inset: 1%;
+  border-radius: 9999px;
+  border: 1px solid rgba(163, 255, 224, 0.3);
+  box-shadow:
+    0 0 24px rgba(79, 244, 198, 0.42),
+    inset 0 0 20px rgba(79, 244, 198, 0.2);
+  animation: aura 6s ease-in-out infinite;
+}
+@keyframes aura {
+  0%,
+  100% {
+    opacity: 0.2;
+    transform: scale(0.996);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.028);
+  }
+}
+
 /* ---- idle ------------------------------------------------------------------ */
+
+/* The rings wander a pixel or two, very slowly, as if the space breathes. */
+.drift {
+  position: absolute;
+  inset: 0;
+  animation: drift 27s ease-in-out infinite;
+}
+@keyframes drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  25% {
+    transform: translate3d(1.5px, -2px, 0);
+  }
+  50% {
+    transform: translate3d(-1px, 1.5px, 0) scale(1.004);
+  }
+  75% {
+    transform: translate3d(-2px, -1px, 0);
+  }
+}
 
 /* Outer ring: a slow, quiet breath on the halo's 6s rhythm. */
 .breathe {
@@ -25,6 +153,186 @@
   50% {
     opacity: 1;
     transform: scale(1.012);
+  }
+}
+
+/* ---- mood ----------------------------------------------------------------------
+   data-mood is asleep (no mint connected), awake, or resting (no input for a
+   while). data-busy, data-covered and data-waking layer on top of it. */
+
+.core[data-mood="asleep"] .stage {
+  opacity: 0.72;
+}
+.core[data-mood="resting"] .stage {
+  opacity: 0.8;
+  transition-duration: 3s; /* sinks slowly, wakes at the normal pace */
+}
+
+/* Awake: a brighter core, and a slow current running around the track. */
+.glow {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  opacity: 0;
+  transition: opacity 1.2s ease;
+  background: radial-gradient(circle at 50% 46%, rgba(163, 255, 224, 0.08) 0%, rgba(79, 244, 198, 0.04) 42%, rgba(79, 244, 198, 0) 70%);
+  box-shadow: inset 0 0 46px rgba(79, 244, 198, 0.2);
+}
+.core[data-mood="awake"] .glow,
+.core[data-busy] .glow {
+  opacity: 1;
+}
+.current {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  opacity: 0;
+  transition: opacity 1.6s ease;
+  background: conic-gradient(rgba(79, 244, 198, 0) 0deg, rgba(79, 244, 198, 0) 296deg, rgba(163, 255, 224, 0.55) 360deg);
+  mask-image: radial-gradient(closest-side, transparent 88.9%, #000 89.6%, #000 90.4%, transparent 91.1%);
+  animation: turn 16s linear infinite;
+  animation-play-state: paused;
+}
+.core[data-mood="awake"] .current {
+  opacity: 1;
+  animation-play-state: running;
+}
+@keyframes turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Resting: the rest goes quiet while a wide, slow breath rises and falls. */
+.deep {
+  position: absolute;
+  inset: -2%;
+  opacity: 0;
+  transition: opacity 3s ease;
+}
+.deep::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  box-shadow:
+    0 0 44px 6px rgba(79, 244, 198, 0.2),
+    inset 0 0 34px rgba(79, 244, 198, 0.14);
+  animation: deep 10s ease-in-out infinite;
+  animation-play-state: paused;
+}
+.core[data-mood="resting"] .deep {
+  opacity: 1;
+}
+.core[data-mood="resting"] .deep::before {
+  animation-play-state: running;
+}
+@keyframes deep {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.97);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.035);
+  }
+}
+
+/* Busy: a tight, quick pulse off the lens rim, two beats apart. */
+.pulse {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  display: none;
+  opacity: 0;
+  border: 1px solid rgba(163, 255, 224, 0.6);
+  box-shadow:
+    0 0 14px rgba(79, 244, 198, 0.45),
+    inset 0 0 12px rgba(79, 244, 198, 0.3);
+}
+.core[data-busy] .pulse {
+  display: block;
+  animation: pulse 1.1s cubic-bezier(0.25, 0.6, 0.3, 1) infinite;
+}
+.core[data-busy] .pulse + .pulse {
+  animation-delay: 0.55s;
+}
+@keyframes pulse {
+  0% {
+    opacity: 0.85;
+    transform: scale(0.985);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.13);
+  }
+}
+
+/* Covered: a panel opened. A brief focus, then a soft dim that holds. While
+   an action runs under the panel the core comes forward again, so its pulse
+   shows through. */
+.core[data-covered] .stage {
+  opacity: 0.5;
+  transform: scale(0.985);
+}
+.core[data-covered][data-busy] .stage {
+  opacity: 0.85;
+}
+.core[data-covered] .focus {
+  animation: focus 0.5s ease-out;
+}
+@keyframes focus {
+  30% {
+    transform: scale(0.962);
+  }
+}
+/* The rim lights up as it tightens, so the focus still reads through the
+   panel's veil. */
+.ack {
+  position: absolute;
+  inset: 0.5%;
+  border-radius: 9999px;
+  opacity: 0;
+  border: 1px solid rgba(163, 255, 224, 0.7);
+  box-shadow:
+    0 0 26px rgba(79, 244, 198, 0.5),
+    inset 0 0 26px rgba(79, 244, 198, 0.35);
+}
+.core[data-covered] .ack {
+  animation: ack 0.7s ease-out;
+}
+@keyframes ack {
+  20% {
+    opacity: 1;
+  }
+}
+
+/* Waking: the panel closed, someone stirred, or the mint came online. The
+   stage brightens back (its transition) under a short glow. */
+.wake {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  opacity: 0;
+  box-shadow:
+    inset 0 0 34px rgba(79, 244, 198, 0.42),
+    0 0 34px rgba(79, 244, 198, 0.3);
+}
+.core[data-waking] .wake {
+  animation: wake 1.2s ease-out;
+}
+@keyframes wake {
+  0% {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
   }
 }
 
@@ -246,21 +554,57 @@
 }
 
 /* ---- reduced motion -----------------------------------------------------------
-   Nothing moves or scales. The waves and sparks are not rendered at all, and
-   the number only brightens or dims; the lens still charges or darkens. */
+   Nothing moves or scales: no leaning (the pointer hook is not attached), no
+   drift, breath, current, pulse or focus, and no waves or sparks. What is left
+   is glow: the moods still differ in brightness (fading, not moving), busy is a
+   steady lit rim, opening a panel lights the rim for a moment, waking is a
+   short glow, and a reaction only brightens or dims the number while the lens
+   charges or darkens. */
 
 @media (prefers-reduced-motion: reduce) {
   .breathe,
+  .drift,
+  .core[data-covered] .focus,
   .core[data-flow] .halo,
   .core[data-flow] .outer,
   .core[data-flow] .dash {
     animation: none;
+  }
+  .stage {
+    transition: opacity 0.6s ease;
+  }
+  .core[data-covered] .stage {
+    transform: none;
+  }
+  .near,
+  .arc,
+  .current {
+    display: none;
+  }
+  .deep::before {
+    animation: none;
+    opacity: 0.5;
+  }
+  .core[data-busy] .pulse {
+    animation: none;
+    opacity: 0.6;
+  }
+  .core[data-busy] .pulse + .pulse {
+    display: none;
+  }
+  .core[data-waking] .wake {
+    animation-name: wake-still;
   }
   .core[data-flow="in"] .num {
     animation-name: num-in-still;
   }
   .core[data-flow="out"] .num {
     animation-name: num-out-still;
+  }
+}
+@keyframes wake-still {
+  30% {
+    opacity: 1;
   }
 }
 @keyframes num-in-still {

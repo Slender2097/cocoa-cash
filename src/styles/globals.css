@@ -126,6 +126,21 @@
     opacity: 0;
   }
 }
+/* A light that runs along an edge, then rests for most of its cycle. */
+@keyframes sheen {
+  0% {
+    opacity: 0;
+    transform: translateX(-100%);
+  }
+  4% {
+    opacity: 1;
+  }
+  18%,
+  100% {
+    opacity: 0;
+    transform: translateX(300%);
+  }
+}
 .anim-spin-slow {
   animation: spin-slow 60s linear infinite;
 }
@@ -145,13 +160,18 @@
 .anim-fade {
   animation: fade 0.25s ease-out both;
 }
+.anim-sheen {
+  opacity: 0; /* hidden between runs, and for reduced motion */
+  animation: sheen 9s ease-in-out 0.2s infinite;
+}
 @media (prefers-reduced-motion: reduce) {
   .anim-spin-slow,
   .anim-spin-rev,
   .anim-breathe,
   .anim-trace,
   .anim-rise,
-  .anim-fade {
+  .anim-fade,
+  .anim-sheen {
     animation: none;
   }
 }

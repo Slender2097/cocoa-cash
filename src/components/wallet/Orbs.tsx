@@ -1,8 +1,10 @@
 // src/components/wallet/Orbs.tsx
-// The four wallet actions as glowing orbs.
+// The four wallet actions as glowing orbs. Each one breathes a soft glow on
+// its own slow rhythm, and the glow goes quieter while the wallet rests.
 // MIT License
 
 import React from "react";
+import fx from "./Orbs.module.css";
 
 export type FlowType = "mint" | "melt" | "send" | "claim";
 
@@ -41,10 +43,28 @@ export const FLOWS: { type: FlowType; label: string; hint: string }[] = [
   { type: "claim", label: "Claim", hint: "Ecash in" },
 ];
 
-export default function Orbs({ disabled, onPick }: { disabled: boolean; onPick: (t: FlowType) => void }) {
+// Breath per orb: cycle length and phase (s). The cycles differ a little, so
+// the row drifts in and out of step instead of pulsing together.
+const BREATH = [
+  { every: 5.8, at: -0.6 },
+  { every: 6.6, at: -3.4 },
+  { every: 6.2, at: -1.9 },
+  { every: 7, at: -5.1 },
+];
+
+export default function Orbs({
+  disabled,
+  resting = false,
+  onPick,
+}: {
+  disabled: boolean;
+  /** True after a while without input: the glow goes quieter. */
+  resting?: boolean;
+  onPick: (t: FlowType) => void;
+}) {
   return (
-    <div className="grid w-full max-w-md grid-cols-4 gap-2 sm:gap-6">
-      {FLOWS.map((f) => (
+    <div className={`${resting ? fx.resting : ""} grid w-full max-w-md grid-cols-4 gap-2 sm:gap-6`}>
+      {FLOWS.map((f, i) => (
         <button
           key={f.type}
           onClick={() => onPick(f.type)}
@@ -60,7 +80,15 @@ export default function Orbs({ disabled, onPick }: { disabled: boolean; onPick: 
               border: "1px solid rgba(163,255,224,0.35)",
             }}
           >
-            <svg viewBox="0 0 24 24" className="h-8 w-8 drop-shadow-[0_0_6px_rgba(163,255,224,0.8)]">
+            {!disabled && (
+              <span aria-hidden className={fx.calm}>
+                <span
+                  className={fx.aura}
+                  style={{ "--every": `${BREATH[i].every}s`, "--at": `${BREATH[i].at}s` } as React.CSSProperties}
+                />
+              </span>
+            )}
+            <svg viewBox="0 0 24 24" className="relative h-8 w-8 drop-shadow-[0_0_6px_rgba(163,255,224,0.8)]">
               {ICONS[f.type]}
             </svg>
           </span>

@@ -1,0 +1,213 @@
+/* src/components/wallet/Cosmos.module.css
+   Ambient life for the backdrop. Every animation here moves only transform
+   and opacity, runs for tens of seconds, and stays far dimmer than the core.
+   Palette only: neon #4ff4c6 · pulse #a3ffe0.
+   MIT License */
+
+/* Size container, so flares can be placed on the circuit's nodes. */
+.cosmos {
+  container-type: size;
+}
+
+/* The whole field breathes, very slowly. */
+.space {
+  position: absolute;
+  inset: 0;
+  animation: space 18s ease-in-out infinite;
+}
+@keyframes space {
+  0%,
+  100% {
+    opacity: 0.93;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+}
+
+/* The two light refractions wander on long, unrelated loops. */
+.driftA,
+.driftB {
+  position: absolute;
+  inset: 0;
+}
+.driftA {
+  animation: drift-a 38s ease-in-out infinite;
+}
+.driftB {
+  animation: drift-b 47s ease-in-out infinite;
+}
+@keyframes drift-a {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(4vmax, 3vmax, 0);
+  }
+}
+@keyframes drift-b {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(-5vmax, -3vmax, 0);
+  }
+}
+
+/* Distant glows and flares. They go quieter while the wallet rests. */
+.life {
+  position: absolute;
+  inset: 0;
+  transition: opacity 3s ease;
+}
+.cosmos[data-resting] .life {
+  opacity: 0.4;
+}
+
+/* A soft glow that crosses part of the dark, then is gone for a while. The
+   paths keep to the edges, away from the balance. */
+.wisp {
+  position: absolute;
+  width: 38vmax;
+  height: 38vmax;
+  border-radius: 9999px;
+  opacity: 0;
+  background: radial-gradient(circle, rgba(79, 244, 198, 0.12) 0%, rgba(79, 244, 198, 0.05) 36%, rgba(79, 244, 198, 0) 66%);
+}
+.wispA {
+  /* along the top, left to right */
+  left: -19vmax;
+  top: -12vmax;
+  animation: wisp-a 26s ease-in-out -3s infinite;
+}
+.wispB {
+  /* along the bottom, right to left */
+  right: -19vmax;
+  bottom: -14vmax;
+  animation: wisp-b 31s ease-in-out -15s infinite;
+}
+.wispC {
+  /* up the left edge */
+  left: -24vmax;
+  top: 55vh;
+  animation: wisp-c 37s ease-in-out -26s infinite;
+}
+@keyframes wisp-a {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0);
+  }
+  10% {
+    opacity: 1;
+  }
+  32%,
+  100% {
+    opacity: 0;
+    transform: translate3d(65vw, 8vh, 0);
+  }
+}
+@keyframes wisp-b {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0);
+  }
+  10% {
+    opacity: 0.9;
+  }
+  30%,
+  100% {
+    opacity: 0;
+    transform: translate3d(-60vw, -6vh, 0);
+  }
+}
+@keyframes wisp-c {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0);
+  }
+  12% {
+    opacity: 0.8;
+  }
+  34%,
+  100% {
+    opacity: 0;
+    transform: translate3d(3vw, -30vh, 0);
+  }
+}
+
+/* A circuit node flares, sends out one ripple, and rests for most of its cycle. */
+.flare {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+.flare::before,
+.flare::after {
+  content: "";
+  position: absolute;
+  border-radius: 9999px;
+  opacity: 0;
+  animation-duration: var(--every, 15s);
+  animation-delay: var(--at, 0s);
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-out;
+}
+.flare::before {
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+  background: radial-gradient(circle, rgba(163, 255, 224, 0.55) 0%, rgba(79, 244, 198, 0.18) 40%, rgba(79, 244, 198, 0) 70%);
+  animation-name: flare;
+}
+.flare::after {
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border: 1px solid rgba(163, 255, 224, 0.45);
+  animation-name: ripple;
+}
+@keyframes flare {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  3% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  12%,
+  100% {
+    opacity: 0;
+    transform: scale(1.15);
+  }
+}
+@keyframes ripple {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  3% {
+    opacity: 0.7;
+  }
+  16%,
+  100% {
+    opacity: 0;
+    transform: scale(5.5);
+  }
+}
+
+/* Reduced motion: a still backdrop. */
+@media (prefers-reduced-motion: reduce) {
+  .space,
+  .driftA,
+  .driftB {
+    animation: none;
+  }
+  .life {
+    display: none;
+  }
+}

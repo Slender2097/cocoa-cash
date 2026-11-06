@@ -1,25 +1,39 @@
 // src/components/wallet/BalanceCore.tsx
 // The glowing balance at the center of the wallet, plus the mint it belongs to.
 //
-// The core reacts when the balance moves. Sats in (a mint, a claim, a tip
-// claimed in another tab) send a bright wave out through the rings and light
-// around the rim; sats out (a melt, a send) draw the rings in and dim the glow
-// for a moment. It watches the `balance` prop only, which every proof change
-// already flows into, so no Cashu code is involved. A change that lands while
-// the core is covered by a panel, or while the tab is hidden, is held and
-// played once the core can be seen again.
+// The core behaves like a living instrument:
+// - Presence: the rings lean toward a nearby pointer or finger, the light in
+//   the lens follows it, the rim brightens on that side, and the breathing
+//   shows more the closer it comes (useCorePointer).
+// - Mood: dim until a mint is connected, awake once it is (brighter core, a
+//   slow current running around the track), a tight pulse while an action
+//   runs, and a slower, deeper breath after a while without input. Opening a
+//   panel draws a brief focus and then a soft dim; closing it wakes the core.
+// - Reactions: when the balance goes up (a mint, a claim, a tip claimed in
+//   another tab) a bright wave leaves the rings and sparks run around the rim;
+//   when it goes down (a melt, a send) the rings draw in and the glow dips.
+//   The core only watches the `balance` prop, which every proof change already
+//   flows into, so no Cashu code is involved. A change that lands while the
+//   core is covered by a panel, or while the tab is hidden, is held and played
+//   once the core can be seen again.
+// The number itself never leans, drifts or dims (beyond a short dip when sats
+// go out), so it stays readable at all times.
 // MIT License
 
 import React, { memo, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import fx from "./BalanceCore.module.css";
 import { mintLabel } from "@/lib/utils/mintLabel";
+import useCorePointer from "@/hooks/useCorePointer";
 
 type Flow = "in" | "out";
 /** The latest reaction. A new `id` restarts its animations; `dir` is null once it has played. */
 type Beat = { id: number; dir: Flow | null };
+/** How alive the core looks when nothing else is going on. */
+type Mood = "asleep" | "awake" | "resting";
 
 const SETTLE_MS = 80; // changes that land together play as one reaction
-const REVEAL_MS = 280; // after a panel closes, let the eye find the core first
+const REVEAL_MS = 420; // after a panel closes, let the core wake before it reacts
+const WAKE_MS = 1200; // length of the wake-up glow
 const PLAY_MS: Record<Flow, number> = { in: 2000, out: 1500 }; // longest animation, delays included
 
 // Sparks that race along the rim when sats come in: start angle, distance, delay.
@@ -28,6 +42,11 @@ const SPARKS = [
   { from: 138, travel: 190, delay: 170 },
   { from: 258, travel: 235, delay: 220 },
 ];
+
+const LENS_STYLE = {
+  background: "radial-gradient(circle at 35% 30%, rgba(163,255,224,0.12), rgba(20,37,31,0.85) 55%, rgba(7,17,13,0.95))",
+  boxShadow: "inset 0 0 40px rgba(79,244,198,0.18), 0 0 60px -10px rgba(79,244,198,0.35)",
+};
 
 const REDUCE = "(prefers-reduced-motion: reduce)";
 const onReduceChange = (cb: () => void) => {
@@ -86,20 +105,30 @@ export default function BalanceCore({
   balance,
   mint,
   connected,
+  processing = false,
   covered = false,
+  resting = false,
   onMints,
 }: {
   balance: number;
   mint: string;
   connected: boolean;
-  /** True while a panel or modal sits over the core. Reactions wait until it is gone. */
+  /** True while a wallet action is running. The core pulses, tight and focused. */
+  processing?: boolean;
+  /** True while a panel or modal sits over the core. It dims, and reactions wait until it is gone. */
   covered?: boolean;
+  /** True after a while without input. The core breathes slower and deeper. */
+  resting?: boolean;
   onMints: () => void;
 }) {
   const ringGradient = useId();
+  const coreRef = useRef<HTMLDivElement>(null);
   const reduced = useReducedMotion();
   const pageVisible = usePageVisible();
   const seen = !covered && pageVisible;
+
+  // The rings follow a nearby pointer, except under a panel or with reduced motion.
+  useCorePointer(coreRef, !reduced, !covered);
 
   // What the core shows follows `balance`, but only while someone can see it.
   const [shown, setShown] = useState({ balance, mint });
@@ -135,79 +164,123 @@ export default function BalanceCore({
     return () => window.clearTimeout(t);
   }, [beat]);
 
+  // Waking up: a panel closes, someone stirs after a rest, or the mint comes online.
+  const [was, setWas] = useState({ covered, resting, connected });
+  const [wake, setWake] = useState({ id: 0, on: false });
+  if (was.covered !== covered || was.resting !== resting || was.connected !== connected) {
+    const woke = (was.covered && !covered) || (was.resting && !resting) || (!was.connected && connected);
+    setWas({ covered, resting, connected });
+    if (woke) setWake((w) => ({ id: w.id + 1, on: true }));
+  }
+  useEffect(() => {
+    if (!wake.on) return;
+    const t = window.setTimeout(() => setWake((w) => ({ ...w, on: false })), WAKE_MS);
+    return () => window.clearTimeout(t);
+  }, [wake]);
+
   const flow = beat.dir ?? undefined;
   const wave = flow === "in" ? fx.expand : fx.collapse;
+  // A reaction briefly wakes a resting core; a panel on top is handled by data-covered.
+  const mood: Mood = resting && !flow && !covered && !processing ? "resting" : connected ? "awake" : "asleep";
 
   return (
-    // overflow-x-clip: the waves and spinning rings reach past the core, never past the page.
-    <div className="flex w-full flex-col items-center overflow-x-clip">
+    // The glow, waves and rings reach past the core; the page clips them at its
+    // own edge (see index.tsx), so they fade out instead of stopping short.
+    <div className="flex w-full flex-col items-center">
       <div
+        ref={coreRef}
         className={`${fx.core} relative grid aspect-square w-[min(78vw,330px)] sm:w-[380px] place-items-center`}
+        data-mood={mood}
         data-flow={flow}
+        data-busy={processing || undefined}
+        data-covered={covered || undefined}
+        data-waking={wake.on || undefined}
       >
-        {/* halo */}
-        <div aria-hidden className="anim-breathe absolute inset-[-12%]">
-          <div
-            key={beat.id}
-            className={`${fx.halo} h-full w-full rounded-full blur-2xl`}
-            style={{ background: "radial-gradient(circle, rgba(79,244,198,0.28) 0%, rgba(79,244,198,0) 65%)" }}
-          />
-        </div>
-        {/* outer ring and dotted track: slow spin, slow breath */}
-        <div aria-hidden className="anim-spin-slow absolute inset-0">
-          <div className={`${fx.breathe} h-full w-full`}>
-            <svg key={beat.id} viewBox="0 0 200 200" className={`${fx.outer} h-full w-full`}>
-              <defs>
-                <linearGradient id={ringGradient} x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0" stopColor="#a3ffe0" stopOpacity="0.9" />
-                  <stop offset="0.5" stopColor="#4ff4c6" stopOpacity="0.05" />
-                  <stop offset="1" stopColor="#4ff4c6" stopOpacity="0.6" />
-                </linearGradient>
-              </defs>
-              <circle cx="100" cy="100" r="97" fill="none" stroke={`url(#${ringGradient})`} strokeWidth="1.2" />
-              <circle cx="100" cy="100" r="90" fill="none" stroke="rgba(79,244,198,0.26)" strokeWidth="0.6" strokeDasharray="1 5" />
-            </svg>
+        {/* Everything but the number: dims and focuses with the mood. */}
+        <div aria-hidden className={fx.stage}>
+          <div className={fx.focus}>
+            {/* halo, drifting against the pointer for depth */}
+            <div className={`${fx.haloDepth} absolute inset-[-12%]`}>
+              <div className="anim-breathe h-full w-full">
+                <div
+                  key={beat.id}
+                  className={`${fx.halo} h-full w-full rounded-full blur-2xl`}
+                  style={{ background: "radial-gradient(circle, rgba(79,244,198,0.28) 0%, rgba(79,244,198,0) 65%)" }}
+                />
+              </div>
+            </div>
+            {/* deep breath, only while resting */}
+            <div className={fx.deep} />
+            {/* the rim lights up as a panel opens */}
+            <span className={fx.ack} />
+
+            {/* rings: lean toward the pointer, and drift on their own */}
+            <div className={fx.tilt}>
+              <div className={fx.drift}>
+                {/* outer ring and dotted track: slow spin, slow breath */}
+                <div className="anim-spin-slow absolute inset-0">
+                  <div className={`${fx.breathe} h-full w-full`}>
+                    <svg key={beat.id} viewBox="0 0 200 200" className={`${fx.outer} h-full w-full`}>
+                      <defs>
+                        <linearGradient id={ringGradient} x1="0" y1="0" x2="1" y2="1">
+                          <stop offset="0" stopColor="#a3ffe0" stopOpacity="0.9" />
+                          <stop offset="0.5" stopColor="#4ff4c6" stopOpacity="0.05" />
+                          <stop offset="1" stopColor="#4ff4c6" stopOpacity="0.6" />
+                        </linearGradient>
+                      </defs>
+                      <circle cx="100" cy="100" r="97" fill="none" stroke={`url(#${ringGradient})`} strokeWidth="1.2" />
+                      <circle cx="100" cy="100" r="90" fill="none" stroke="rgba(79,244,198,0.26)" strokeWidth="0.6" strokeDasharray="1 5" />
+                    </svg>
+                  </div>
+                </div>
+                {/* breathing that shows as the pointer comes close */}
+                <div className={fx.near}>
+                  <span className={fx.aura} />
+                </div>
+                {/* the rim brightens on the pointer's side */}
+                <span className={fx.arc} />
+                {/* a slow current around the track while awake */}
+                <span className={fx.current} />
+                {/* dashed segments, counter-rotating, with a soft glow under each dash */}
+                <div className="anim-spin-rev absolute inset-[9%]">
+                  <svg key={beat.id} viewBox="0 0 200 200" className={`${fx.dash} h-full w-full`}>
+                    <circle cx="100" cy="100" r="98" fill="none" stroke="rgba(79,244,198,0.1)" strokeWidth="3.2" strokeDasharray="40 18 6 18" />
+                    <circle cx="100" cy="100" r="98" fill="none" stroke="rgba(163,255,224,0.45)" strokeWidth="0.9" strokeDasharray="40 18 6 18" />
+                  </svg>
+                </div>
+                {/* the reaction's waves and sparks, under the lens */}
+                {flow && !reduced && (
+                  <React.Fragment key={`wave${beat.id}`}>
+                    <span className={`${fx.wave} ${wave}`} />
+                    <span className={`${fx.wave} ${wave} ${fx.echo}`} />
+                    {flow === "in" &&
+                      SPARKS.map((s) => (
+                        <span
+                          key={s.from}
+                          className={fx.spark}
+                          style={{ "--from": `${s.from}deg`, "--travel": `${s.travel}deg`, animationDelay: `${s.delay}ms` } as React.CSSProperties}
+                        />
+                      ))}
+                  </React.Fragment>
+                )}
+              </div>
+            </div>
+
+            {/* lens, a touch closer than the rings */}
+            <div className={`${fx.lensDepth} absolute inset-[15%]`}>
+              <div className="absolute inset-0 rounded-full" style={LENS_STYLE} />
+              <div className={fx.glow} />
+              <div className={fx.glintClip}>
+                <span className={fx.glint} />
+              </div>
+              {flow && <span key={`lens${beat.id}`} className={`absolute inset-0 rounded-full ${flow === "in" ? fx.charge : fx.drain}`} />}
+              <span className={fx.pulse} />
+              <span className={fx.pulse} />
+              <span key={`wake${wake.id}`} className={fx.wake} />
+            </div>
           </div>
         </div>
-        {/* dashed segments, counter-rotating, with a soft glow under each dash */}
-        <div aria-hidden className="anim-spin-rev absolute inset-[9%]">
-          <svg key={beat.id} viewBox="0 0 200 200" className={`${fx.dash} h-full w-full`}>
-            <circle cx="100" cy="100" r="98" fill="none" stroke="rgba(79,244,198,0.1)" strokeWidth="3.2" strokeDasharray="40 18 6 18" />
-            <circle cx="100" cy="100" r="98" fill="none" stroke="rgba(163,255,224,0.45)" strokeWidth="0.9" strokeDasharray="40 18 6 18" />
-          </svg>
-        </div>
-        {/* the reaction's waves and sparks, under the lens */}
-        {flow && !reduced && (
-          <React.Fragment key={`wave${beat.id}`}>
-            <span aria-hidden className={`${fx.wave} ${wave}`} />
-            <span aria-hidden className={`${fx.wave} ${wave} ${fx.echo}`} />
-            {flow === "in" &&
-              SPARKS.map((s) => (
-                <span
-                  key={s.from}
-                  aria-hidden
-                  className={fx.spark}
-                  style={{ "--from": `${s.from}deg`, "--travel": `${s.travel}deg`, animationDelay: `${s.delay}ms` } as React.CSSProperties}
-                />
-              ))}
-          </React.Fragment>
-        )}
-        {/* lens */}
-        <div
-          aria-hidden
-          className="absolute inset-[15%] rounded-full"
-          style={{
-            background: "radial-gradient(circle at 35% 30%, rgba(163,255,224,0.12), rgba(20,37,31,0.85) 55%, rgba(7,17,13,0.95))",
-            boxShadow: "inset 0 0 40px rgba(79,244,198,0.18), 0 0 60px -10px rgba(79,244,198,0.35)",
-          }}
-        />
-        {flow && (
-          <span
-            key={`lens${beat.id}`}
-            aria-hidden
-            className={`absolute inset-[15%] rounded-full ${flow === "in" ? fx.charge : fx.drain}`}
-          />
-        )}
+
         <Readout value={shown.balance} beat={beat.id} instant={reduced} />
       </div>
 
