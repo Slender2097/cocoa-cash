@@ -19,7 +19,7 @@
 //     reload or network error.
 // MIT License
 
-import { Amount, MintQuoteState, MeltQuoteState, CheckStateEnum, getEncodedToken } from "@cashu/cashu-ts";
+import { Amount, MintQuoteState, MeltQuoteState, CheckStateEnum, getEncodedToken, getTokenMetadata } from "@cashu/cashu-ts";
 import type { MintPreview, MeltPreview, SwapPreview, Proof, Wallet, P2PKOptions, ProofLike, MeltQuoteBolt11Response } from "@cashu/cashu-ts";
 import { addProofs, removeProofs, normalizeMint, readJSON, writeJSON, sumProofs, toStoredProof } from "./storage";
 import type { StoredProof } from "./storage";
@@ -419,8 +419,31 @@ export async function cancelSend(id: string): Promise<SendOp> {
 // Receive = claim a token (NUT-03 swap). Final only when the swap succeeds.
 // ---------------------------------------------------------------------------
 
+/**
+ * Before a claim: drop the proofs the mint already reports SPENT (NUT-07), so
+ * a token that is only partly spent (for example a balance backup made before
+ * later spends) can still be claimed for the rest. NUT-07 is only a filter
+ * here: the claim is final only when the NUT-03 swap succeeds. If the mint
+ * cannot answer, the token is returned unchanged.
+ */
+export async function dropSpentProofs(token: string): Promise<{ token: string; spent: number }> {
+  const trimmed = token.trim();
+  const wallet = await getWallet(getTokenMetadata(trimmed).mint);
+  const decoded = wallet.decodeToken(trimmed);
+  let states;
+  try {
+    states = await wallet.checkProofsStates(decoded.proofs);
+  } catch {
+    return { token: trimmed, spent: 0 };
+  }
+  const live = decoded.proofs.filter((_, i) => states[i]?.state !== CheckStateEnum.SPENT);
+  const spent = sumProofs(decoded.proofs) - sumProofs(live);
+  if (!spent) return { token: trimmed, spent: 0 };
+  if (!live.length) throw new Error("This token was already spent.");
+  return { token: getEncodedToken({ ...decoded, proofs: live }), spent };
+}
+
 export async function startReceive(token: string, opts: { privkey?: string; id?: string } = {}): Promise<ReceiveOp> {
-  const { getTokenMetadata } = await import("@cashu/cashu-ts");
   const meta = getTokenMetadata(token.trim());
   const wallet = await getWallet(meta.mint);
   const preview = await wallet.prepareSwapToReceive(token.trim(), opts.privkey ? { privkey: opts.privkey } : undefined);

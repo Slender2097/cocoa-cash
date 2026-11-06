@@ -21,6 +21,7 @@ import {
   startMelt,
   startSend,
   startReceive,
+  dropSpentProofs,
   recoverOpen,
   openOps,
   getOp,
@@ -42,6 +43,8 @@ export type DataOutput = {
   keysId?: string;
   receivedProofs?: number;
   receivedCount?: number;
+  /** Sats in a claimed token that the mint already reported spent (skipped). */
+  spent?: number;
   preimage?: string;
   feeReserve?: number;
   changeReceived?: number;
@@ -245,7 +248,8 @@ export default function useCashu(): UseCashu {
     if (!token) return setDataOutput({ error: "Enter a token string" });
     setIsProcessing(true);
     try {
-      const op = await startReceive(token); // NUT-03 swap; final only on success
+      const { token: claimable, spent } = await dropSpentProofs(token); // NUT-07 filter only
+      const op = await startReceive(claimable); // NUT-03 swap; final only on success
       if (op.state === "FAILED") throw new Error(op.error || "Token could not be claimed");
       if (op.state !== "DONE") throw new Error(op.error || "The mint did not answer. The claim will be retried automatically.");
       if (normalizeMint(op.mint) !== normalizeMint(activeMint)) switchMint(op.mint);
@@ -254,6 +258,7 @@ export default function useCashu(): UseCashu {
         type: "swap-claim",
         amount: op.amount,
         receivedCount: 1,
+        spent,
         message: `Added ${op.amount} sat to your balance`,
       });
     } catch (error) {

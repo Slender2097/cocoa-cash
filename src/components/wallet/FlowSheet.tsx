@@ -75,7 +75,9 @@ export default function FlowSheet({
     } else if (type === "send" && d.token) {
       setStage({ k: "token", token: d.token, amount: d.amount || 0 });
     } else if (type === "claim" && d.type === "swap-claim") {
-      setStage({ k: "done", title: "Ecash claimed", lines: [`+${d.amount} sat`] });
+      const lines = [`+${d.amount} sat`];
+      if (d.spent) lines.push(`${d.spent} sat in this token were already spent`);
+      setStage({ k: "done", title: "Ecash claimed", lines });
     }
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [dataOutput, type, stage.k]);
