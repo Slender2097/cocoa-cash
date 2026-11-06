@@ -1,0 +1,240 @@
+/* src/components/wallet/Cosmos.module.css
+   Ambient life for the backdrop, at a large scale and a slow pace: the field
+   breathes, its two big light patches wander far and swell like distant
+   pulses, soft glows travel along the edges, and circuit nodes flare and send
+   out a ripple. Every animation here moves only transform and opacity, runs
+   for tens of seconds, and stays far dimmer than the core.
+   Palette only: neon #4ff4c6 · pulse #a3ffe0.
+   MIT License */
+
+/* Size container, so flares can be placed on the circuit's nodes. */
+.cosmos {
+  container-type: size;
+}
+
+/* The whole field breathes, very slowly. */
+.space {
+  position: absolute;
+  inset: 0;
+  animation: space 18s ease-in-out infinite;
+}
+@keyframes space {
+  0%,
+  100% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.03);
+  }
+}
+
+/* The two big light patches wander on long, unrelated loops, and each swells
+   now and then like a distant pulse (a second animation, on opacity only). */
+.driftA,
+.driftB {
+  position: absolute;
+  inset: 0;
+}
+.driftA {
+  animation:
+    drift-a 44s ease-in-out infinite,
+    swell 13s ease-in-out -2s infinite;
+}
+.driftB {
+  animation:
+    drift-b 56s ease-in-out infinite,
+    swell 17s ease-in-out -9s infinite;
+}
+@keyframes drift-a {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  35% {
+    transform: translate3d(7vmax, 5vmax, 0);
+  }
+  70% {
+    transform: translate3d(-5vmax, 3vmax, 0);
+  }
+}
+@keyframes drift-b {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  40% {
+    transform: translate3d(-9vmax, -6vmax, 0);
+  }
+  75% {
+    transform: translate3d(-3vmax, -9vmax, 0);
+  }
+}
+@keyframes swell {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  40% {
+    opacity: 1;
+  }
+  75% {
+    opacity: 0.5;
+  }
+}
+
+/* Distant glows and flares. They go quieter while the wallet rests. */
+.life {
+  position: absolute;
+  inset: 0;
+  transition: opacity 3s ease;
+}
+.cosmos[data-resting] .life {
+  opacity: 0.4;
+}
+
+/* A soft glow that crosses part of the dark, then is gone for a while. The
+   paths keep to the edges, away from the balance. */
+.wisp {
+  position: absolute;
+  width: 50vmax;
+  height: 50vmax;
+  border-radius: 9999px;
+  opacity: 0;
+  background: radial-gradient(circle, rgba(79, 244, 198, 0.18) 0%, rgba(79, 244, 198, 0.07) 36%, rgba(79, 244, 198, 0) 66%);
+}
+.wispA {
+  /* along the top, left to right */
+  left: -25vmax;
+  top: -17vmax;
+  animation: wisp-a 26s ease-in-out -3s infinite;
+}
+.wispB {
+  /* along the bottom, right to left */
+  right: -25vmax;
+  bottom: -19vmax;
+  animation: wisp-b 31s ease-in-out -15s infinite;
+}
+.wispC {
+  /* up the left edge */
+  left: -31vmax;
+  top: 50vh;
+  animation: wisp-c 37s ease-in-out -26s infinite;
+}
+@keyframes wisp-a {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0);
+  }
+  12% {
+    opacity: 1;
+  }
+  38%,
+  100% {
+    opacity: 0;
+    transform: translate3d(70vw, 9vh, 0);
+  }
+}
+@keyframes wisp-b {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0);
+  }
+  12% {
+    opacity: 0.9;
+  }
+  36%,
+  100% {
+    opacity: 0;
+    transform: translate3d(-66vw, -7vh, 0);
+  }
+}
+@keyframes wisp-c {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0);
+  }
+  14% {
+    opacity: 0.85;
+  }
+  40%,
+  100% {
+    opacity: 0;
+    transform: translate3d(4vw, -34vh, 0);
+  }
+}
+
+/* A circuit node flares, sends out one ripple, and rests for most of its cycle. */
+.flare {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+.flare::before,
+.flare::after {
+  content: "";
+  position: absolute;
+  border-radius: 9999px;
+  opacity: 0;
+  animation-duration: var(--every, 15s);
+  animation-delay: var(--at, 0s);
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-out;
+}
+.flare::before {
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+  background: radial-gradient(circle, rgba(163, 255, 224, 0.6) 0%, rgba(79, 244, 198, 0.2) 40%, rgba(79, 244, 198, 0) 70%);
+  animation-name: flare;
+}
+.flare::after {
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border: 1px solid rgba(163, 255, 224, 0.5);
+  box-shadow: 0 0 10px rgba(79, 244, 198, 0.3);
+  animation-name: ripple;
+}
+@keyframes flare {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  3% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  14%,
+  100% {
+    opacity: 0;
+    transform: scale(1.2);
+  }
+}
+@keyframes ripple {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  3% {
+    opacity: 0.75;
+  }
+  20%,
+  100% {
+    opacity: 0;
+    transform: scale(8);
+  }
+}
+
+/* Reduced motion: a still backdrop. */
+@media (prefers-reduced-motion: reduce) {
+  .space,
+  .driftA,
+  .driftB {
+    animation: none;
+  }
+  .life {
+    display: none;
+  }
+}
