@@ -21,7 +21,11 @@ import {
 } from "@/lib/tip/config";
 import { generateSecretKey, getPublicKey, npubEncode, nsecEncode, nsecDecode } from "@/lib/tip/nut18";
 import { seal, unseal } from "@/lib/tip/seal";
-import { readProofs, sumProofs, rememberMint, requestPersistentStorage, PROOFS_EVENT } from "@/lib/cashu/storage";
+import { readProofs, sumProofs, rememberMint, requestPersistentStorage, toStoredProof, PROOFS_EVENT } from "@/lib/cashu/storage";
+import type { ProofsByMint, StoredProof } from "@/lib/cashu/storage";
+import { backupTokens } from "@/lib/cashu/backup";
+import type { BackupToken } from "@/lib/cashu/backup";
+import { mintLabel } from "@/lib/utils/mintLabel";
 import { getWallet, toHex, fromHex, errText } from "@/lib/cashu/outputs";
 import { INBOX, listInbox, syncInbox, claimAll } from "@/lib/tip/flows";
 import type { InboxRecord } from "@/lib/tip/flows";
@@ -42,6 +46,18 @@ type TipConfig = {
 type SettingsValues = { mints: string[]; amount: number | null; label: string; pass: string; nsec: string };
 
 const fmtTime = (ms?: number) => (ms ? new Date(ms).toLocaleString() : "");
+
+// Sealed data (the admin key here, an export file anywhere) can be attacked
+// offline, so passphrases must be long. Existing shorter ones still unlock.
+const MIN_PASSPHRASE = 12;
+const passphraseError = (a: string, b: string): string | null =>
+  a.length < MIN_PASSPHRASE
+    ? `Pick a passphrase of at least ${MIN_PASSPHRASE} characters`
+    : a !== b
+      ? "Passphrases do not match"
+      : null;
+
+type TipExport = { kind?: string; exportedAt?: string; nsec?: string; proofsByMint?: Record<string, unknown[]> };
 
 function loadConfig(): TipConfig | null {
   try {
@@ -127,8 +143,8 @@ function SettingsForm({
     if (amount && !(parseInt(amount, 10) > 0)) return setError("Amount must be a positive number, or empty for any amount");
     if (unknown.length && !trust) return setError("Confirm that you trust the mint(s) not in the known list");
     if (isNew) {
-      if (pass.length < 4) return setError("Pick a passphrase of at least 4 characters");
-      if (pass !== pass2) return setError("Passphrases do not match");
+      const passError = passphraseError(pass, pass2);
+      if (passError) return setError(passError);
     }
     setBusy(true);
     try {
@@ -189,12 +205,12 @@ function SettingsForm({
         <>
           <div className="grid grid-cols-2 gap-3">
             <label className="text-sm">
-              Admin passphrase
-              <input type="password" className={inputCls + " mt-2"} value={pass} onChange={(e) => setPass(e.target.value)} />
+              Admin passphrase ({MIN_PASSPHRASE}+ characters)
+              <input type="password" autoComplete="new-password" className={inputCls + " mt-2"} value={pass} onChange={(e) => setPass(e.target.value)} />
             </label>
             <label className="text-sm">
               Repeat passphrase
-              <input type="password" className={inputCls + " mt-2"} value={pass2} onChange={(e) => setPass2(e.target.value)} />
+              <input type="password" autoComplete="new-password" className={inputCls + " mt-2"} value={pass2} onChange={(e) => setPass2(e.target.value)} />
             </label>
           </div>
           <p className="text-xs opacity-70 -mt-2">
@@ -227,6 +243,10 @@ export default function CreatorPage() {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<number | null>(null);
   const [showNsec, setShowNsec] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exPass, setExPass] = useState("");
+  const [exPass2, setExPass2] = useState("");
+  const [exError, setExError] = useState<string | null>(null);
   const [origin, setOrigin] = useState("https://cocoa.cash");
 
   useEffect(() => {
@@ -326,11 +346,15 @@ export default function CreatorPage() {
   };
 
   // Read-only sealed export: a copy of the proofs and the receiving key,
-  // encrypted with the admin passphrase. Nothing is removed from the wallet.
-  const exportSealed = async () => {
+  // encrypted with a passphrase typed twice. Nothing is removed from the wallet.
+  // "Open a sealed export" below turns it back into tokens to Claim.
+  const exportSealed = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!skHex) return;
-    const pp = window.prompt("Passphrase to seal the export with:");
-    if (!pp) return;
+    const passError = passphraseError(exPass, exPass2);
+    if (passError) return setExError(passError);
+    setExError(null);
+    const pp = exPass;
     const box = await seal(
       {
         kind: "cocoa-tip-export",
@@ -345,7 +369,10 @@ export default function CreatorPage() {
     a.href = URL.createObjectURL(blob);
     a.download = `cocoa-tips-sealed-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
-    URL.revokeObjectURL(a.href);
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    setExPass("");
+    setExPass2("");
+    setExportOpen(false);
   };
 
   const embed = config?.npub
@@ -483,19 +510,157 @@ export default function CreatorPage() {
                 <button className={ghostCls} onClick={() => setShowNsec((s) => !s)}>
                   {showNsec ? "Hide key" : "Show receiving key"}
                 </button>
-                <button className={ghostCls} onClick={exportSealed}>
+                <button className={ghostCls} onClick={() => setExportOpen((o) => !o)}>
                   Download sealed export
                 </button>
               </div>
               {showNsec && <CopyRow label="nsec (secret, do not share)" value={nsecEncode(fromHex(skHex))} />}
+              {exportOpen && (
+                <form onSubmit={exportSealed} className="mt-3 flex flex-col gap-3" data-testid="export-form">
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    className={inputCls}
+                    value={exPass}
+                    onChange={(e) => setExPass(e.target.value)}
+                    placeholder={`Export passphrase (${MIN_PASSPHRASE}+ characters)`}
+                    aria-label="Export passphrase"
+                  />
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    className={inputCls}
+                    value={exPass2}
+                    onChange={(e) => setExPass2(e.target.value)}
+                    placeholder="Repeat passphrase"
+                    aria-label="Repeat export passphrase"
+                  />
+                  {exError && <p className="text-sm text-red-300">{exError}</p>}
+                  <button className={btnCls}>Seal and download</button>
+                </form>
+              )}
               <p className="text-xs opacity-60 mt-3">
-                The export is an encrypted, read-only copy of your proofs and key. It does not move or remove anything.
+                The export is an encrypted, read-only copy of your proofs and key. It does not move or remove anything. Anyone
+                with the file and its passphrase can spend those sats.
               </p>
             </Panel>
           </>
         )}
+        {config !== undefined && <OpenExport />}
       </div>
     </>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Open a sealed export: unseal it here, then Claim each mint's token in the
+// full wallet (NUT-03 swap). Proofs spent since the export are skipped there
+// (NUT-07). Nothing is claimed or stored by this panel itself.
+// ----------------------------------------------------------------------------
+function OpenExport() {
+  const [file, setFile] = useState<File | null>(null);
+  const [pass, setPass] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [opened, setOpened] = useState<{ exportedAt?: string; nsec: string; tokens: BackupToken[] } | null>(null);
+  const [showKey, setShowKey] = useState(false);
+
+  const open = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!file) return setError("Choose the .json file from Download sealed export");
+    let box: Sealed;
+    try {
+      box = JSON.parse(await file.text());
+      if (!box || box.v !== 1 || !box.salt || !box.iv || !box.data) throw new Error("not a sealed file");
+    } catch {
+      return setError("This is not a sealed export file");
+    }
+    let data: TipExport;
+    try {
+      data = await unseal<TipExport>(box, pass);
+    } catch {
+      return setError("Wrong passphrase");
+    }
+    if (data?.kind !== "cocoa-tip-export") return setError("This file is not a cocoa.cash tip export");
+    const proofsByMint: ProofsByMint = {};
+    for (const [mint, list] of Object.entries(data.proofsByMint || {})) {
+      proofsByMint[mint] = (Array.isArray(list) ? list : [])
+        .map((p) => toStoredProof(p as StoredProof))
+        .filter((p): p is StoredProof => !!p);
+    }
+    setOpened({ exportedAt: data.exportedAt, nsec: data.nsec || "", tokens: backupTokens(proofsByMint) });
+    setPass("");
+    setShowKey(false);
+  };
+
+  return (
+    <Panel title="Open a sealed export">
+      {!opened ? (
+        <form onSubmit={open} className="flex flex-col gap-3" data-testid="open-export">
+          <p className="text-sm opacity-80">
+            Read a file from Download sealed export, for example on a new browser. You get its sats as tokens to Claim and its
+            receiving key.
+          </p>
+          <input
+            type="file"
+            accept="application/json,.json"
+            className="text-sm"
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            aria-label="Sealed export file"
+          />
+          <input
+            type="password"
+            autoComplete="off"
+            className={inputCls}
+            value={pass}
+            onChange={(e) => setPass(e.target.value)}
+            placeholder="Export passphrase"
+            aria-label="Export passphrase to open the file"
+          />
+          {error && <p className="text-sm text-red-300">{error}</p>}
+          <button className={btnCls}>Open export</button>
+        </form>
+      ) : (
+        <div data-testid="opened-export">
+          <p className="text-sm opacity-80 mb-3">
+            {opened.exportedAt ? `Exported ${fmtTime(Date.parse(opened.exportedAt))}. ` : ""}Paste each token into Claim in the{" "}
+            <Link href="/" className="text-[#4ff4c6] underline">
+              full wallet
+            </Link>
+            . Sats spent since the export are skipped there.
+          </p>
+          {opened.tokens.length === 0 && <p className="text-sm opacity-70 mb-3">No sats in this export.</p>}
+          {opened.tokens.map((t) =>
+            t.token ? (
+              <CopyRow key={t.mint} label={`${mintLabel(t.mint)} · ${t.amount} sat`} value={t.token} />
+            ) : (
+              <p key={t.mint} className="text-sm text-yellow-200 mb-3">
+                {mintLabel(t.mint)} · {t.amount} sat: could not make a token ({t.error}).
+              </p>
+            )
+          )}
+          <div className="flex flex-wrap gap-2">
+            {opened.nsec && (
+              <button className={ghostCls} onClick={() => setShowKey((s) => !s)}>
+                {showKey ? "Hide receiving key" : "Show receiving key"}
+              </button>
+            )}
+            <button className={ghostCls} onClick={() => setOpened(null)}>
+              Close
+            </button>
+          </div>
+          {showKey && opened.nsec && (
+            <div className="mt-3">
+              <CopyRow label="nsec (secret, do not share)" value={opened.nsec} />
+              <p className="text-xs opacity-70">
+                To keep receiving tips with this key here, paste it under &quot;I already have a receiving key&quot; when you
+                create the tip button.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </Panel>
   );
 }
 
