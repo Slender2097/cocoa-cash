@@ -282,7 +282,6 @@ export default function BalanceCore({
                 <span className={fx.arc}>
                   <span className={fx.arcBloom} />
                   <span className={fx.beam} />
-                  <span className={fx.lensFlare} />
                   <span className={fx.inflow} />
                   <span className={`${fx.inflow} ${fx.inflowMirror}`} />
                 </span>
@@ -328,6 +327,8 @@ export default function BalanceCore({
               <div className={fx.glow} />
               {/* the lens edge beats with the energy field */}
               <span className={fx.lensRim} />
+              {/* and flares toward a nearby pointer */}
+              <span className={fx.lensFlare} />
               <div className={fx.glintClip}>
                 <span className={fx.glint} />
               </div>

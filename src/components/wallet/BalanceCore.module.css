@@ -118,8 +118,9 @@
 }
 
 /* The side facing the pointer lights up hard: the rim, the dotted track and
-   the dashed ring brighten, a soft light fills the rings on that side, a beam
-   runs from the lens out through them, and the lens rim flares. */
+   the dashed ring brighten, a soft light fills the rings on that side, and a
+   beam runs from the lens out through them. The lens flares with it (below,
+   on the lens itself). */
 .arc {
   position: absolute;
   inset: 0;
@@ -185,22 +186,31 @@
     rgba(79, 244, 198, 0) 100%
   );
 }
-/* the lens flares hard toward the pointer */
+/* The lens flares hard toward the pointer. It sits on the lens, over its
+   glass, and turns and fades with the lit side. The light inside the lens
+   stays near its edge, clear of the balance. */
 .lensFlare {
   position: absolute;
-  inset: 15%;
+  inset: 0;
+  display: none;
   border-radius: 9999px;
   overflow: hidden;
+  transform: rotate(calc(var(--angle, 0) * 1deg));
+  opacity: var(--hot, 0);
+  will-change: transform, opacity;
+}
+.core[data-present] .lensFlare {
+  display: block;
 }
 .lensFlare::before {
   content: "";
   position: absolute;
   inset: 0;
   background: radial-gradient(
-    ellipse 50% 24% at 50% 0%,
-    rgba(232, 255, 247, 0.3) 0%,
-    rgba(163, 255, 224, 0.28) 22%,
-    rgba(79, 244, 198, 0.13) 52%,
+    ellipse 46% 16% at 50% 0%,
+    rgba(232, 255, 247, 0.36) 0%,
+    rgba(163, 255, 224, 0.24) 30%,
+    rgba(79, 244, 198, 0.08) 65%,
     rgba(79, 244, 198, 0) 100%
   );
 }
@@ -1596,6 +1606,7 @@
   }
   .near,
   .core[data-present] .arc,
+  .core[data-present] .lensFlare,
   .core[data-present] .streak,
   .current,
   .counter,
