@@ -74,13 +74,13 @@
 @keyframes swell {
   0%,
   100% {
-    opacity: 0.55;
+    opacity: 0.5;
   }
   40% {
     opacity: 1;
   }
   75% {
-    opacity: 0.55;
+    opacity: 0.5;
   }
 }
 
@@ -102,7 +102,7 @@
   height: 50vmax;
   border-radius: 9999px;
   opacity: 0;
-  background: radial-gradient(circle, rgba(79, 244, 198, 0.15) 0%, rgba(79, 244, 198, 0.06) 36%, rgba(79, 244, 198, 0) 66%);
+  background: radial-gradient(circle, rgba(79, 244, 198, 0.18) 0%, rgba(79, 244, 198, 0.07) 36%, rgba(79, 244, 198, 0) 66%);
 }
 .wispA {
   /* along the top, left to right */

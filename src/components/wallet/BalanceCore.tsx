@@ -3,15 +3,18 @@
 //
 // The core is the wallet's power core, a living instrument:
 // - Energy: while awake a current runs through the rings (bright heads with
-//   long tails, the rim and track one way, the dashed ring the other), the
-//   rim glows, and every 16 to 18 s the rim flares once so it never looks
-//   asleep.
+//   long tails, the rim and track one way, the dashed ring the other). The
+//   light blooms and hums with a faint flicker, a deep field around the rim
+//   beats slowly and gives the core its weight, and sparks crackle along the
+//   rings now and then. Every 16 to 18 s the rim flares once and a faint
+//   wave of light rolls out into the dark, so it never looks asleep.
 // - Presence: the rings lean toward a nearby pointer or finger and light up
-//   hard on that side, two light streaks chase it around the rim, a beam runs
-//   out to it and the lens flares toward it. When it leaves, the light
-//   lingers a moment and settles (useCorePointer).
+//   hard on that side, sparks crackle toward it, two light streaks chase it
+//   around the rim, a beam runs out to it and the lens flares toward it. When
+//   it leaves, the light lingers a moment and settles (useCorePointer).
 // - Mood: dim until a mint is connected. Connecting, or the first touch after
-//   a rest, sends one wave of light out through the rings. While an action
+//   a rest, sends one wave of light out through the rings, lighting each ring
+//   as it passes. While an action
 //   runs the current speeds up and the lens pulses tight and bright; after a
 //   while without input it breathes slower and deeper. Opening a panel
 //   tightens the rings and brightens the lens for a moment, then softens it;
@@ -210,6 +213,8 @@ export default function BalanceCore({
         {/* Everything but the number: dims and focuses with the mood. */}
         <div aria-hidden className={fx.stage}>
           <div className={fx.focus}>
+            {/* with each rim flare, a faint wave of light rolls out into the dark */}
+            <span className={fx.radiate} />
             {/* halo, drifting against the pointer for depth */}
             <div className={`${fx.haloDepth} absolute inset-[-12%]`}>
               <div className="anim-breathe h-full w-full">
@@ -228,6 +233,8 @@ export default function BalanceCore({
             {/* rings: lean toward the pointer, and drift on their own */}
             <div className={fx.tilt}>
               <div className={fx.drift}>
+                {/* the energy field: a deep glow around the rim that beats slowly */}
+                <span className={fx.field} />
                 {/* outer ring and dotted track: slow spin, slow breath */}
                 <div className="anim-spin-slow absolute inset-0">
                   <div className={`${fx.breathe} h-full w-full`}>
@@ -237,7 +244,7 @@ export default function BalanceCore({
                       <defs>
                         <linearGradient id={ringGradient} x1="0" y1="0" x2="1" y2="1">
                           <stop offset="0" stopColor="#a3ffe0" stopOpacity="0.9" />
-                          <stop offset="0.5" stopColor="#4ff4c6" stopOpacity="0.05" />
+                          <stop offset="0.5" stopColor="#4ff4c6" stopOpacity="0.16" />
                           <stop offset="1" stopColor="#4ff4c6" stopOpacity="0.6" />
                         </linearGradient>
                       </defs>
@@ -252,17 +259,25 @@ export default function BalanceCore({
                 </div>
                 {/* the energy current: rim and track clockwise, dashed ring the other way */}
                 <span className={fx.current}>
+                  <span className={fx.bloom} />
                   <span className={fx.head} />
                 </span>
-                <span className={fx.counter} />
+                <span className={fx.counter}>
+                  <span className={fx.counterBloom} />
+                </span>
                 {/* a faster current while an action runs */}
                 <span className={fx.rush} />
                 {/* the rim flares once every 16 to 18 s */}
                 <span className={fx.ringFlare} />
-                {/* the side facing the pointer lights up: rings, a beam, the lens rim */}
+                {/* now and then a spark crackles along the rings */}
+                <span className={fx.crackle} />
+                {/* the side facing the pointer lights up: rings, a beam, the lens rim,
+                    and sparks crackle toward it */}
                 <span className={fx.arc}>
+                  <span className={fx.arcBloom} />
                   <span className={fx.beam} />
                   <span className={fx.lensFlare} />
+                  <span className={fx.zap} />
                 </span>
                 {/* light streaks that chase the pointer around the rim */}
                 <span className={`${fx.streak} ${fx.streakA}`} />
@@ -275,7 +290,13 @@ export default function BalanceCore({
                   </svg>
                 </div>
                 {/* connecting or returning after a rest: one wave of light out through the rings */}
-                {wake.kind === "surge" && !reduced && <span key={`surge${wake.id}`} className={fx.surge} />}
+                {wake.kind === "surge" && !reduced && (
+                  <React.Fragment key={`surge${wake.id}`}>
+                    <span className={fx.surge} />
+                    {/* each ring lights up as the wave passes it */}
+                    <span className={fx.surgeRings} />
+                  </React.Fragment>
+                )}
                 {/* the reaction's waves and sparks, under the lens */}
                 {flow && !reduced && (
                   <React.Fragment key={`wave${beat.id}`}>
@@ -298,6 +319,8 @@ export default function BalanceCore({
             <div className={`${fx.lensDepth} absolute inset-[15%]`}>
               <div className="absolute inset-0 rounded-full" style={LENS_STYLE} />
               <div className={fx.glow} />
+              {/* the lens edge beats with the energy field */}
+              <span className={fx.lensRim} />
               <div className={fx.glintClip}>
                 <span className={fx.glint} />
               </div>

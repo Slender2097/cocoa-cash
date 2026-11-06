@@ -1,9 +1,10 @@
 /* src/components/wallet/BalanceCore.module.css
    Motion for the balance core, the wallet's power core: its energy (a
-   current through the rings, a rim flare now and then), its presence
-   (leaning toward the pointer and lighting up on that side), its moods
-   (asleep, awake, busy, covered, resting), its wake-up moments, and the
-   reaction when sats come in or go out. Only transform and opacity move
+   current through the rings, a field that beats, sparks, a rim flare now
+   and then), its presence (leaning toward the pointer, lighting up and
+   crackling on that side), its moods (asleep, awake, busy, covered,
+   resting), its wake-up moments, and the reaction when sats come in or go
+   out. Only transform and opacity move
    (plus the number's glow during a reaction), so the browser can run it all
    on the compositor. The number is never inside .stage, so it never leans,
    drifts or dims with the rest.
@@ -35,12 +36,33 @@
     rgba(0, 0, 0, 0.5) 81%,
     transparent 82%
   );
+  /* Wider bands with soft wings, for sparks: the wings are their glow. */
+  --rimSpark: radial-gradient(
+    closest-side,
+    transparent 92.2%,
+    rgba(0, 0, 0, 0.28) 94.6%,
+    #000 96.4%,
+    #000 97.6%,
+    rgba(0, 0, 0, 0.28) 99.2%,
+    transparent 100%
+  );
+  --trackSpark: radial-gradient(
+    closest-side,
+    transparent 86.6%,
+    rgba(0, 0, 0, 0.28) 88.5%,
+    #000 89.6%,
+    #000 90.4%,
+    rgba(0, 0, 0, 0.28) 91.6%,
+    transparent 93.6%
+  );
 }
 
-/* Everything but the number. Mood changes fade its opacity and scale. */
+/* Everything but the number. Mood changes fade its opacity and scale.
+   Nothing in it takes a tap, however far its light reaches. */
 .stage {
   position: absolute;
   inset: 0;
+  pointer-events: none;
   transition:
     opacity 0.9s ease,
     transform 0.9s cubic-bezier(0.2, 0.7, 0.2, 1);
@@ -106,6 +128,19 @@
   );
   mask-image: var(--rim), var(--track), var(--dash);
 }
+/* bloom past the rim on that side */
+.arcBloom {
+  position: absolute;
+  inset: -14%;
+  border-radius: 9999px;
+  background: conic-gradient(
+    from -50deg,
+    rgba(79, 244, 198, 0) 0deg,
+    rgba(79, 244, 198, 0.34) 50deg,
+    rgba(79, 244, 198, 0) 100deg
+  );
+  mask-image: radial-gradient(closest-side, transparent 60%, #000 75.8%, rgba(0, 0, 0, 0.35) 86%, transparent 100%);
+}
 /* soft light across the rings on that side */
 .arc::after {
   content: "";
@@ -148,6 +183,93 @@
     rgba(79, 244, 198, 0.15) 45%,
     rgba(79, 244, 198, 0) 100%
   );
+}
+
+/* Near the pointer the crackle never stops: sparks jump on the rim and the
+   track at the edges of the lit side, where they show against the dimmer
+   light (the spark shapes are with .crackle below). */
+.zap {
+  position: absolute;
+  inset: 0;
+}
+.zap::before {
+  animation-name: zap-a;
+  animation-duration: 1.3s;
+}
+.zap::after {
+  animation-name: zap-b;
+  animation-duration: 1.75s;
+  animation-delay: -0.6s;
+}
+@keyframes zap-a {
+  0% {
+    opacity: 1;
+    transform: rotate(-38deg);
+  }
+  6% {
+    opacity: 0.25;
+    transform: rotate(-31deg);
+  }
+  12% {
+    opacity: 0.9;
+    transform: rotate(-44deg);
+  }
+  18% {
+    opacity: 0;
+    transform: rotate(36deg);
+  }
+  50% {
+    opacity: 0.85;
+    transform: rotate(36deg);
+  }
+  56% {
+    opacity: 0.3;
+    transform: rotate(42deg);
+  }
+  62% {
+    opacity: 1;
+    transform: rotate(30deg);
+  }
+  68%,
+  100% {
+    opacity: 0;
+    transform: rotate(-38deg);
+  }
+}
+@keyframes zap-b {
+  0% {
+    opacity: 0.9;
+    transform: rotate(40deg);
+  }
+  5% {
+    opacity: 0.3;
+    transform: rotate(33deg);
+  }
+  10% {
+    opacity: 0.95;
+    transform: rotate(46deg);
+  }
+  15% {
+    opacity: 0;
+    transform: rotate(-35deg);
+  }
+  55% {
+    opacity: 1;
+    transform: rotate(-35deg);
+  }
+  60% {
+    opacity: 0.35;
+    transform: rotate(-41deg);
+  }
+  65% {
+    opacity: 0.8;
+    transform: rotate(-29deg);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: rotate(40deg);
+  }
 }
 
 /* Two streaks chase the pointer around the rings, each a little slower, so
@@ -234,8 +356,10 @@
 /* ---- energy ------------------------------------------------------------------
    While awake a current runs through the rings: a bright head with a long
    tail on the rim and a softer one on the dotted track half a turn behind,
-   clockwise, and a shorter one on the dashed ring the other way. The rim
-   glows steadily, and now and then it flares. */
+   clockwise, and a shorter one on the dashed ring the other way. The light
+   blooms around it and hums with a faint, uneven flicker. A deep field
+   around the rim beats slowly, sparks crackle along the rings now and then,
+   and every 16 to 18 s the rim flares and sends a wave out into the dark. */
 
 /* The powered rim: a steady glow along the outer ring (breathes with it).
    Its own layer, so the blur is drawn once and not again every time the
@@ -246,13 +370,86 @@
   border-radius: 9999px;
   opacity: 0.3;
   box-shadow:
-    0 0 22px rgba(79, 244, 198, 0.34),
-    inset 0 0 16px rgba(79, 244, 198, 0.16);
+    0 0 14px rgba(79, 244, 198, 0.42),
+    0 0 44px rgba(79, 244, 198, 0.2),
+    inset 0 0 16px rgba(79, 244, 198, 0.18);
   transition: opacity 1.2s ease;
   will-change: transform;
 }
 .core[data-mood="awake"] .rimGlow {
   opacity: 1;
+}
+
+/* The energy field: a deep glow that hugs the rim and reaches well past it.
+   It beats once every 6 s, a strong rise, a slow fall and a softer echo,
+   timed to the top of the rings' breath, and gives the core its weight. The
+   lens edge beats with it. */
+.field {
+  position: absolute;
+  inset: -22%;
+  opacity: 0.25;
+  transition: opacity 1.2s ease;
+}
+.lensRim {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  opacity: 0;
+  transition: opacity 1.2s ease;
+}
+.field::before,
+.lensRim::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  animation: thrum 6s cubic-bezier(0.3, 0, 0.4, 1) -3.42s infinite;
+}
+.field::before {
+  background: radial-gradient(
+    closest-side,
+    rgba(79, 244, 198, 0) 50%,
+    rgba(79, 244, 198, 0.08) 60%,
+    rgba(79, 244, 198, 0.34) 67.4%,
+    rgba(79, 244, 198, 0.14) 75%,
+    rgba(79, 244, 198, 0.04) 87%,
+    rgba(79, 244, 198, 0) 100%
+  );
+}
+.lensRim::before {
+  border: 1px solid rgba(163, 255, 224, 0.3);
+  box-shadow:
+    inset 0 0 16px rgba(79, 244, 198, 0.32),
+    0 0 18px rgba(79, 244, 198, 0.26);
+}
+.core[data-mood="awake"] .field,
+.core[data-busy] .field,
+.core[data-mood="awake"] .lensRim,
+.core[data-busy] .lensRim {
+  opacity: 1;
+}
+.core[data-mood="resting"] .field,
+.core[data-mood="resting"] .lensRim {
+  opacity: 0.5;
+}
+@keyframes thrum {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(0.992);
+  }
+  7% {
+    opacity: 1;
+    transform: scale(1.018);
+  }
+  17% {
+    opacity: 0.62;
+    transform: scale(1.004);
+  }
+  24% {
+    opacity: 0.78;
+    transform: scale(1.01);
+  }
 }
 
 .current,
@@ -312,8 +509,63 @@
   border-radius: 9999px;
   background: #e8fff7;
   box-shadow:
-    0 0 8px 2px rgba(163, 255, 224, 0.85),
-    0 0 22px 6px rgba(79, 244, 198, 0.45);
+    0 0 8px 2px rgba(163, 255, 224, 0.9),
+    0 0 26px 8px rgba(79, 244, 198, 0.5);
+  animation: hum 1.9s steps(1, end) -0.7s infinite;
+}
+/* bloom around the rim tail, so the current reads as light, not a line */
+.bloom {
+  position: absolute;
+  inset: -8%;
+  border-radius: 9999px;
+  background: conic-gradient(
+    rgba(79, 244, 198, 0) 0deg,
+    rgba(79, 244, 198, 0) 262deg,
+    rgba(79, 244, 198, 0.28) 326deg,
+    rgba(163, 255, 224, 0.62) 360deg
+  );
+  mask-image: radial-gradient(
+    closest-side,
+    transparent 71%,
+    rgba(0, 0, 0, 0.3) 78.5%,
+    #000 83.6%,
+    rgba(0, 0, 0, 0.3) 88.5%,
+    transparent 96%
+  );
+  animation: hum 2.6s steps(1, end) infinite;
+}
+/* the hum: an uneven flicker, never far below full */
+@keyframes hum {
+  0% {
+    opacity: 1;
+  }
+  9% {
+    opacity: 0.76;
+  }
+  13% {
+    opacity: 1;
+  }
+  37% {
+    opacity: 0.86;
+  }
+  41% {
+    opacity: 1;
+  }
+  58% {
+    opacity: 0.7;
+  }
+  61% {
+    opacity: 0.94;
+  }
+  64% {
+    opacity: 1;
+  }
+  83% {
+    opacity: 0.82;
+  }
+  87% {
+    opacity: 1;
+  }
 }
 /* dashed ring: the tail runs clockwise from the head, as it turns the other way */
 .counter::before {
@@ -340,8 +592,27 @@
   border-radius: 9999px;
   background: #e8fff7;
   box-shadow:
-    0 0 6px 1px rgba(163, 255, 224, 0.8),
-    0 0 16px 4px rgba(79, 244, 198, 0.4);
+    0 0 6px 1px rgba(163, 255, 224, 0.85),
+    0 0 18px 5px rgba(79, 244, 198, 0.45);
+}
+.counterBloom {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: conic-gradient(
+    rgba(163, 255, 224, 0.5) 0deg,
+    rgba(79, 244, 198, 0.2) 40deg,
+    rgba(79, 244, 198, 0) 90deg,
+    rgba(79, 244, 198, 0) 360deg
+  );
+  mask-image: radial-gradient(
+    closest-side,
+    transparent 71%,
+    rgba(0, 0, 0, 0.3) 76.5%,
+    #000 80.4%,
+    rgba(0, 0, 0, 0.3) 84.5%,
+    transparent 90%
+  );
 }
 
 /* While an action runs, a faster pair takes over from the current. */
@@ -405,10 +676,217 @@
   position: absolute;
   inset: 1.2%;
   border-radius: 9999px;
-  border: 1px solid rgba(163, 255, 224, 0.55);
+  border: 1px solid rgba(163, 255, 224, 0.7);
   box-shadow:
-    0 0 30px rgba(79, 244, 198, 0.5),
-    inset 0 0 24px rgba(79, 244, 198, 0.28);
+    0 0 16px rgba(163, 255, 224, 0.4),
+    0 0 52px rgba(79, 244, 198, 0.45),
+    inset 0 0 26px rgba(79, 244, 198, 0.32);
+}
+/* With each flare a faint wave of light rolls out from the rim into the
+   dark, past the edges of the screen. Drawn once at the core's size and
+   only scaled. Both wait for a mint, and restart when it connects, so the
+   first flare comes a few seconds after the wake-up wave. */
+.radiate {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  opacity: 0;
+  background: radial-gradient(
+    closest-side,
+    rgba(79, 244, 198, 0) 80%,
+    rgba(79, 244, 198, 0.06) 90%,
+    rgba(163, 255, 224, 0.2) 97%,
+    rgba(79, 244, 198, 0) 100%
+  );
+  animation: radiate 34s cubic-bezier(0.22, 0.6, 0.35, 1) -29.5s infinite;
+}
+.core[data-mood="asleep"] .ringFlare,
+.core[data-mood="asleep"] .radiate {
+  display: none;
+}
+@keyframes radiate {
+  0% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  0.8% {
+    opacity: 1;
+  }
+  13% {
+    opacity: 0;
+    transform: scale(3);
+  }
+  13.01%,
+  47% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  47.8% {
+    opacity: 1;
+  }
+  60% {
+    opacity: 0;
+    transform: scale(3);
+  }
+  60.01%,
+  100% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
+/* Sparks crackle along the rings: a short bright segment flickers and jumps
+   a few degrees, then is gone. The rim and the dotted track each get two per
+   cycle, at different places, on cycles that rarely line up. Only while
+   awake. The same spark shapes crackle near the pointer (.zap). */
+.crackle {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 1.2s ease;
+}
+.core[data-mood="awake"] .crackle {
+  opacity: 1;
+}
+.crackle::before,
+.crackle::after,
+.zap::before,
+.zap::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  opacity: 0;
+  animation-timing-function: steps(1, end);
+  animation-iteration-count: infinite;
+}
+.crackle::before,
+.zap::before {
+  background: conic-gradient(
+    from -11deg,
+    rgba(163, 255, 224, 0) 0deg,
+    rgba(232, 255, 247, 1) 9deg,
+    rgba(232, 255, 247, 1) 13deg,
+    rgba(163, 255, 224, 0) 22deg
+  );
+  mask-image: var(--rimSpark);
+}
+.crackle::after,
+.zap::after {
+  background: conic-gradient(
+    from -8deg,
+    rgba(163, 255, 224, 0) 0deg,
+    rgba(232, 255, 247, 0.95) 8deg,
+    rgba(163, 255, 224, 0) 16deg
+  );
+  mask-image: var(--trackSpark);
+}
+.crackle::before {
+  animation-name: crackle-a;
+  animation-duration: 13.7s;
+}
+.crackle::after {
+  animation-name: crackle-b;
+  animation-duration: 17.9s;
+  animation-delay: -5.3s;
+}
+@keyframes crackle-a {
+  0% {
+    opacity: 0;
+    transform: rotate(52deg);
+  }
+  22% {
+    opacity: 1;
+    transform: rotate(52deg);
+  }
+  22.4% {
+    opacity: 0.3;
+    transform: rotate(57deg);
+  }
+  22.8% {
+    opacity: 1;
+    transform: rotate(61deg);
+  }
+  23.3% {
+    opacity: 0.5;
+    transform: rotate(58deg);
+  }
+  23.7% {
+    opacity: 0.9;
+    transform: rotate(66deg);
+  }
+  24.1% {
+    opacity: 0;
+    transform: rotate(229deg);
+  }
+  72% {
+    opacity: 0.9;
+    transform: rotate(229deg);
+  }
+  72.4% {
+    opacity: 0.2;
+    transform: rotate(224deg);
+  }
+  72.8% {
+    opacity: 1;
+    transform: rotate(236deg);
+  }
+  73.3% {
+    opacity: 0.4;
+    transform: rotate(233deg);
+  }
+  73.7% {
+    opacity: 0.85;
+    transform: rotate(240deg);
+  }
+  74.1%,
+  100% {
+    opacity: 0;
+    transform: rotate(240deg);
+  }
+}
+@keyframes crackle-b {
+  0% {
+    opacity: 0;
+    transform: rotate(318deg);
+  }
+  31% {
+    opacity: 1;
+    transform: rotate(318deg);
+  }
+  31.3% {
+    opacity: 0.35;
+    transform: rotate(311deg);
+  }
+  31.6% {
+    opacity: 0.95;
+    transform: rotate(305deg);
+  }
+  32% {
+    opacity: 0;
+    transform: rotate(140deg);
+  }
+  81% {
+    opacity: 0.9;
+    transform: rotate(140deg);
+  }
+  81.3% {
+    opacity: 0.3;
+    transform: rotate(146deg);
+  }
+  81.6% {
+    opacity: 1;
+    transform: rotate(151deg);
+  }
+  81.9% {
+    opacity: 0.6;
+    transform: rotate(148deg);
+  }
+  82.3%,
+  100% {
+    opacity: 0;
+    transform: rotate(148deg);
+  }
 }
 @keyframes ring-flare {
   0% {
@@ -609,17 +1087,45 @@
 }
 
 /* Surge: the mint comes online, or someone returns after a rest. One wave of
-   light leaves the lens and runs out through the rings. */
+   light leaves the lens and runs out through the rings, and each ring lights
+   up as the wave crosses it. */
 .surge {
   position: absolute;
   inset: 15%;
   border-radius: 9999px;
   opacity: 0;
-  border: 1.5px solid rgba(163, 255, 224, 0.85);
+  border: 2px solid rgba(163, 255, 224, 0.9);
   box-shadow:
-    0 0 34px 6px rgba(79, 244, 198, 0.42),
-    inset 0 0 30px 4px rgba(79, 244, 198, 0.32);
-  animation: surge 1.7s var(--burst);
+    0 0 40px 8px rgba(79, 244, 198, 0.5),
+    inset 0 0 34px 6px rgba(79, 244, 198, 0.36);
+  animation: surge 1.8s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.surgeRings {
+  position: absolute;
+  inset: 0;
+}
+.surgeRings::before,
+.surgeRings::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: rgba(232, 255, 247, 0.9);
+  opacity: 0;
+  animation: ring-lit 1.2s ease-out both;
+}
+.surgeRings::before {
+  mask-image: var(--dash);
+  animation-delay: 0.1s;
+}
+.surgeRings::after {
+  mask-image: var(--track), var(--rim);
+  animation-delay: 0.22s;
+}
+@keyframes ring-lit {
+  10% {
+    opacity: 1;
+  }
 }
 .surge::after {
   content: "";
@@ -651,9 +1157,10 @@
   inset: 0;
   border-radius: 9999px;
   opacity: 0;
+  border: 1px solid rgba(163, 255, 224, 0.45);
   box-shadow:
-    inset 0 0 34px rgba(79, 244, 198, 0.42),
-    0 0 34px rgba(79, 244, 198, 0.3);
+    inset 0 0 36px rgba(79, 244, 198, 0.5),
+    0 0 44px rgba(79, 244, 198, 0.4);
 }
 .core[data-waking="flare"] .wake {
   animation: wake 1s ease-out;
@@ -945,12 +1452,13 @@
 
 
 /* ---- reduced motion -----------------------------------------------------------
-   Nothing moves or scales: no leaning (the pointer hook is not attached), no
-   current, streaks, flares or waves, no drift, breath, pulse or focus. What
-   is left is glow: the moods still differ in brightness (fading, not
-   moving), the rim glows steadily while awake, busy is a steady lit rim,
-   opening a panel and waking up are short glows, and a reaction only
-   brightens or dims the number while the lens charges or darkens. */
+   Nothing moves, scales or flickers: no leaning (the pointer hook is not
+   attached), no current, streaks, sparks, flares or waves, no drift, breath,
+   beat, pulse or focus. What is left is glow: the moods still differ in
+   brightness (fading, not moving), the rim and its field glow steadily while
+   awake, busy is a steady lit rim, opening a panel and waking up are short
+   glows, and a reaction only brightens or dims the number while the lens
+   charges or darkens. */
 
 @media (prefers-reduced-motion: reduce) {
   .breathe,
@@ -974,8 +1482,15 @@
   .counter,
   .core[data-busy] .rush,
   .ringFlare,
+  .radiate,
+  .crackle,
   .surge {
     display: none;
+  }
+  .field::before,
+  .lensRim::before {
+    animation: none;
+    opacity: 0.7;
   }
   .deep::before {
     animation: none;
