@@ -100,7 +100,12 @@ export default function useCashu(): UseCashu {
         }
       } catch (error) {
         setWalletReady(false);
-        if (!opts.silent) setDataOutput({ error: "Connection failed", details: errText(error) });
+        if (!opts.silent) {
+          // A wrong path (often just the wrong letter case) answers with a 4xx.
+          const hasPath = /^https?:\/\/[^/]+\/./i.test(url);
+          const hint = hasPath ? " Check the URL: the part after the domain is case-sensitive." : "";
+          setDataOutput({ error: "Connection failed", details: errText(error) + hint });
+        }
       }
     },
     [switchMint]
