@@ -72,9 +72,11 @@ export default function Orbs({
 }) {
   return (
     <div className={`${resting ? fx.resting : ""} flex w-full justify-center gap-10 sm:gap-14`} data-still={still || undefined}>
-      {FLOWS.filter((f) => types.includes(f.type)).map((f) => {
-        // each action keeps its own rhythm wherever it is shown
-        const breath = BREATH[FLOWS.indexOf(f)];
+      {types.map((t) => {
+        // shown in the order given; each action keeps its own rhythm wherever it is shown
+        const i = FLOWS.findIndex((f) => f.type === t);
+        const f = FLOWS[i];
+        const breath = BREATH[i];
         return (
         <button
           key={f.type}
