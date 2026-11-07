@@ -16,6 +16,7 @@ import { parseTipParams } from "@/lib/tip/config";
 import { buildPaymentRequest } from "@/lib/tip/nut18";
 import { createLightningTip, createTokenTip, advanceTip, openOutbox } from "@/lib/tip/flows";
 import type { OutboxRecord } from "@/lib/tip/flows";
+import { CameraBlockedError, startBestCamera, stopCamera } from "@/lib/qrCamera";
 
 const PRESETS = [21, 100, 1000];
 const errText = (e: unknown) => (e instanceof Error ? e.message : e ? String(e) : "") || "Something went wrong";
@@ -61,19 +62,30 @@ function Scanner({ onResult, onClose }: { onResult: (text: string) => void; onCl
   useEffect(() => {
     let scanner: import("html5-qrcode").Html5Qrcode | undefined;
     let stopped = false;
-    import("html5-qrcode").then(({ Html5Qrcode }) => {
+    let done = false;
+    import("html5-qrcode").then(({ Html5Qrcode, Html5QrcodeSupportedFormats }) => {
       if (stopped) return;
-      scanner = new Html5Qrcode("tip-qr-reader");
-      scanner
-        .start({ facingMode: "environment" }, { fps: 15, qrbox: 220 }, (text) => {
-          scanner?.stop().catch(() => {});
-          cb.current.onResult(text.trim());
-        }, () => {})
-        .catch(() => cb.current.onClose("Camera not available"));
+      scanner = new Html5Qrcode("tip-qr-reader", {
+        verbose: false,
+        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+        useBarCodeDetectorIfSupported: true,
+      });
+      startBestCamera(scanner, { fps: 15, qrbox: 220 }, (text) => {
+        if (done) return;
+        done = true;
+        stopCamera(scanner);
+        cb.current.onResult(text.trim());
+      })
+        .then(() => {
+          if (stopped) stopCamera(scanner);
+        })
+        .catch((e) =>
+          cb.current.onClose(e instanceof CameraBlockedError ? "Camera access is blocked in your browser settings" : "Camera not available")
+        );
     });
     return () => {
       stopped = true;
-      scanner?.stop?.().catch(() => {});
+      stopCamera(scanner);
     };
   }, []);
   return <div id="tip-qr-reader" className="w-full rounded-2xl overflow-hidden" />;
