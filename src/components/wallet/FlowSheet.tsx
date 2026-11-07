@@ -118,7 +118,7 @@ export default function FlowSheet({
   };
 
   return (
-    <Sheet title={TITLES[type]} onClose={onClose} busy={isProcessing}>
+    <Sheet title={TITLES[type]} onClose={onClose} busy={isProcessing} keyboard>
       {stage.k === "input" && (
         <form
           onSubmit={(e) => {
