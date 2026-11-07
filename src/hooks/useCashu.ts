@@ -104,8 +104,9 @@ export default function useCashu(): UseCashu {
           // A wrong path (often just the wrong letter case) answers with a 4xx.
           const hasPath = /^https?:\/\/[^/]+\/./i.test(url);
           const hint = hasPath ? " Check the URL: the part after the domain is case-sensitive." : "";
-          // cashu-ts names only the host in network errors; show the full URL that was tried.
-          setDataOutput({ error: "Connection failed", details: `${errText(error)} (${url})${hint}` });
+          // Name the mint's full URL, unless the error already names a URL under it.
+          const text = errText(error);
+          setDataOutput({ error: "Connection failed", details: `${text.includes(url) ? text : `${text} (${url})`}${hint}` });
         }
       }
     },

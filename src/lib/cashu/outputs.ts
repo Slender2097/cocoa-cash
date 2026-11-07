@@ -8,7 +8,7 @@
 // locally. Nothing is re-signed, so nothing can be double-counted.
 // MIT License
 
-import { Amount, Mint, NetworkError, OutputData, Wallet } from "@cashu/cashu-ts";
+import { Amount, CallerAbortError, Mint, NetworkError, OutputData, UncancellableReadError, Wallet } from "@cashu/cashu-ts";
 import type { OutputDataLike, Proof, RequestFn, SerializedBlindedMessage } from "@cashu/cashu-ts";
 import { normalizeMint } from "./storage";
 
@@ -61,8 +61,40 @@ const defaultRequest = (): RequestFn | null => {
   return libRequest;
 };
 
-// Mints whose GETs only load with the browser's default cache mode (see below).
-const plainGetMints = new Set<string>();
+// Requests to one mint go out one at a time. cashu-ts sends a mint several
+// requests at once (connecting fires /v1/info, /v1/keysets and /v1/keys
+// together), and a mint's front proxy may refuse a request that arrives while
+// another from the same client is still open (nginx limit_req/limit_conn, for
+// example). The proxy's refusal carries no CORS headers, so the browser only
+// reports "Load failed" (Safari) or "Failed to fetch". In a queue, each request
+// waits for the one before it, but never longer than LANE_WAIT_MS, so a slow
+// call (a melt waiting on Lightning) does not hold the others up for long.
+const LANE_WAIT_MS = 8_000;
+const lanes = new Map<string, Promise<void>>();
+
+// A GET that fails quickly at the network level is tried again after these
+// pauses. GETs only read (info, keys, quote state), so repeating one is safe;
+// POSTs are never repeated here (cashu-ts retries the NUT-19 ones itself). A
+// GET that hung for longer than QUICK_FAIL_MS is not repeated, so a dead
+// connection does not cost the wait several times over.
+const GET_RETRY_MS = [400, 1_200];
+const QUICK_FAIL_MS = 10_000;
+
+const pause = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
+
+/** Resolves when `p` settles or after `ms`, whichever comes first. */
+const settledOrAfter = (p: Promise<void>, ms: number) =>
+  new Promise<void>((done) => {
+    const t = setTimeout(done, ms);
+    p.then(() => {
+      clearTimeout(t);
+      done();
+    });
+  });
+
+/** The request never got an answer the page may read (no abort, no timeout on a body read). */
+const lostInTransit = (e: unknown): e is NetworkError =>
+  e instanceof NetworkError && !(e instanceof CallerAbortError) && !(e instanceof UncancellableReadError);
 
 /**
  * The request function every call to one mint goes through. It changes
@@ -70,12 +102,11 @@ const plainGetMints = new Set<string>();
  * - Every endpoint must sit under the mint's full URL, path included
  *   ("https://mint.minibits.cash/Bitcoin/v1/keys"). One that lost the path is
  *   put back under it rather than sent to the bare host.
- * - cashu-ts fetches with cache: "no-store". Safari turns that into
- *   Cache-Control and Pragma request headers, which makes even a plain GET
- *   need a CORS preflight; a mint whose server does not allow those headers
- *   then fails with "Load failed" in Safari only. When a GET fails at the
- *   network level it is tried once more with the default cache mode (no extra
- *   headers), and that mint keeps using it. POSTs are never retried here.
+ * - One request at a time per mint, and a GET lost in transit is tried again
+ *   (see above).
+ * - cashu-ts names only the host when a request fails ("Load failed at
+ *   https://mint.minibits.cash"), which reads as if the path was dropped. The
+ *   error says which URL failed, and after how many tries.
  */
 function mintRequest(base: string, request: RequestFn): RequestFn {
   const prefix = base + "/";
@@ -88,20 +119,36 @@ function mintRequest(base: string, request: RequestFn): RequestFn {
       console.warn(`[cocoa] mint request outside ${base}: ${args.endpoint} -> ${endpoint}`);
     }
     const get = !args.requestBody && (!args.method || args.method.toUpperCase() === "GET");
-    if (get && plainGetMints.has(base)) return request({ ...args, endpoint, cache: "default" });
-    try {
-      return await request({ ...args, endpoint });
-    } catch (e) {
-      if (!get || !(e instanceof NetworkError) || args.signal?.aborted) throw e;
-      try {
-        const out = await request({ ...args, endpoint, cache: "default" });
-        plainGetMints.add(base);
-        if (dev) console.debug(`[cocoa] ${base}: GETs use the default cache mode`);
-        return out;
-      } catch {
-        throw e;
+
+    const before = lanes.get(base) ?? Promise.resolve();
+    const run = (async () => {
+      await settledOrAfter(before, LANE_WAIT_MS);
+      for (let tries = 1; ; tries++) {
+        const sent = Date.now();
+        try {
+          return await request({ ...args, endpoint });
+        } catch (e) {
+          if (!lostInTransit(e)) throw e;
+          const quick = Date.now() - sent < QUICK_FAIL_MS;
+          if (get && quick && tries <= GET_RETRY_MS.length && !args.signal?.aborted) {
+            if (dev) console.debug(`[cocoa] ${endpoint}: ${e.message}; trying again`);
+            await pause(GET_RETRY_MS[tries - 1]);
+            continue;
+          }
+          const what = e.message.replace(/ at https?:\/\/\S+$/, "");
+          throw new NetworkError(`${what} at ${endpoint}${tries > 1 ? ` (tried ${tries} times)` : ""}`, { cause: e });
+        }
       }
-    }
+    })();
+    const done = run.then(
+      () => {},
+      () => {}
+    );
+    lanes.set(base, done);
+    done.then(() => {
+      if (lanes.get(base) === done) lanes.delete(base);
+    });
+    return run;
   }) as RequestFn;
 }
 
