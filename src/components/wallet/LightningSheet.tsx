@@ -23,7 +23,7 @@ export default function LightningSheet({
   return (
     <Sheet title="Lightning in / out" onClose={onClose} keyboard>
       <div className="py-4">
-        <Orbs types={["mint", "melt"]} disabled={false} resting={resting} still={still} onPick={onPick} />
+        <Orbs types={["melt", "mint"]} disabled={false} resting={resting} still={still} onPick={onPick} />
       </div>
     </Sheet>
   );
