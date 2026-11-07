@@ -74,11 +74,19 @@ export const sumProofs = (proofs: Array<{ amount: unknown }> = []): number =>
   proofs.reduce((s, p) => s + amountToNumber(p?.amount), 0);
 
 /** Wallet storage key for a mint (the wallet has always used a trailing slash). */
+// Mint URL paths are case-sensitive on the server. Some well-known mints are
+// commonly typed with the wrong case (phones type lowercase), so map those to
+// the path the mint actually serves. Host is matched case-insensitively.
+const MINT_PATH_ALIASES: Record<string, string> = {
+  "https://mint.minibits.cash/bitcoin": "https://mint.minibits.cash/Bitcoin",
+};
+
 export const normalizeMint = (url: string): string => {
   let u = String(url || "").trim();
   if (!u) return "";
   if (!/^https?:\/\//i.test(u)) u = "https://" + u;
-  return u.replace(/\/+$/, "");
+  u = u.replace(/\/+$/, "");
+  return MINT_PATH_ALIASES[u.toLowerCase()] ?? u;
 };
 export const walletMintKey = (url: string): string => normalizeMint(url) + "/";
 
