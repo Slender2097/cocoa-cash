@@ -107,10 +107,16 @@ const lostInTransit = (e: unknown): e is NetworkError =>
  * - cashu-ts names only the host when a request fails ("Load failed at
  *   https://mint.minibits.cash"), which reads as if the path was dropped. The
  *   error says which URL failed, and after how many tries.
+ * - GETs to a mint with a path ("https://mint.minibits.cash/Bitcoin") use the
+ *   browser's default cache mode instead of cashu-ts's "no-store", so the
+ *   browser adds no Cache-Control / Pragma request headers to them. Mints send
+ *   no caching headers (no Cache-Control, Expires, ETag or Last-Modified), so
+ *   the browser still fetches every GET fresh.
  */
 function mintRequest(base: string, request: RequestFn): RequestFn {
   const prefix = base + "/";
-  const origin = new URL(base).origin;
+  const { origin, pathname } = new URL(base);
+  const plainGets = pathname !== "/";
   return (async (args: Parameters<RequestFn>[0]) => {
     let endpoint = args.endpoint;
     if (!endpoint.startsWith(prefix)) {
@@ -126,7 +132,7 @@ function mintRequest(base: string, request: RequestFn): RequestFn {
       for (let tries = 1; ; tries++) {
         const sent = Date.now();
         try {
-          return await request({ ...args, endpoint });
+          return await request(get && plainGets ? { ...args, endpoint, cache: "default" } : { ...args, endpoint });
         } catch (e) {
           if (!lostInTransit(e)) throw e;
           const quick = Date.now() - sent < QUICK_FAIL_MS;
