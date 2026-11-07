@@ -1,7 +1,8 @@
 // src/components/wallet/FlowSheet.tsx
-// One panel for the four wallet actions. It only collects input, calls the
-// matching useCashu handler, and renders the handler's result (dataOutput).
-// All Cashu logic stays in useCashu / the journal.
+// The four wallet actions. FlowBody only collects input, calls the matching
+// useCashu handler, and renders the handler's result (dataOutput). FlowSheet
+// puts one action in its own panel (Send, Claim); LightningSheet puts Mint and
+// Melt in one. All Cashu logic stays in useCashu / the journal.
 // MIT License
 
 import { useEffect, useRef, useState } from "react";
@@ -24,23 +25,14 @@ type Stage =
   | { k: "done"; title: string; lines: string[] }
   | { k: "error"; title: string; detail: string };
 
-const TITLES: Record<FlowType, string> = {
+export const TITLES: Record<FlowType, string> = {
   mint: "Mint · Lightning in",
   melt: "Melt · Pay Lightning",
   send: "Send ecash",
   claim: "Claim ecash",
 };
 
-export default function FlowSheet({
-  type,
-  balance,
-  dataOutput,
-  isProcessing,
-  run,
-  confirm,
-  onScan,
-  onClose,
-}: {
+export type FlowProps = {
   type: FlowType;
   balance: number;
   dataOutput: DataOutput;
@@ -50,7 +42,19 @@ export default function FlowSheet({
   confirm: (type: FlowType, ref: string) => Promise<void>;
   onScan: (apply: (text: string) => void) => void;
   onClose: () => void;
-}) {
+};
+
+/** One action in its own panel. */
+export default function FlowSheet(props: FlowProps) {
+  return (
+    <Sheet title={TITLES[props.type]} onClose={props.onClose} busy={props.isProcessing} keyboard>
+      <FlowBody {...props} />
+    </Sheet>
+  );
+}
+
+/** The steps of one action, without the panel around them. */
+export function FlowBody({ type, balance, dataOutput, isProcessing, run, confirm, onScan, onClose }: FlowProps) {
   const [value, setValue] = useState("");
   const [hint, setHint] = useState("");
   const [stage, setStage] = useState<Stage>({ k: "input" });
@@ -118,7 +122,7 @@ export default function FlowSheet({
   };
 
   return (
-    <Sheet title={TITLES[type]} onClose={onClose} busy={isProcessing} keyboard>
+    <>
       {stage.k === "input" && (
         <form
           onSubmit={(e) => {
@@ -278,6 +282,6 @@ export default function FlowSheet({
           </button>
         </div>
       )}
-    </Sheet>
+    </>
   );
 }

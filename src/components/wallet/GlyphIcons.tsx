@@ -1,7 +1,8 @@
 // src/components/wallet/GlyphIcons.tsx
-// The four header glyphs as one family of neon line icons: the palenque hut
+// The header glyphs as one family of neon line icons: the palenque hut
 // (mints), the glyph clock (history), the guardian with spear and shield
-// (seed vault) and the heart with a bolt (tip board).
+// (seed vault), the heart with a bolt (tip board) and the stone doorway
+// (the way out to Lightning).
 // MIT License
 //
 // Every glyph is drawn on the same 32×32 grid with the same 1.4 stroke and
@@ -11,7 +12,7 @@
 
 import React from "react";
 
-export type GlyphName = "mints" | "history" | "vault" | "tips";
+export type GlyphName = "mints" | "history" | "vault" | "tips" | "lightning";
 
 const GLYPHS: Record<GlyphName, React.ReactNode> = {
   // Hut: conical roof flaring past the walls, one ring on the roof, arched door.
@@ -49,13 +50,23 @@ const GLYPHS: Record<GlyphName, React.ReactNode> = {
       <path d="M17.3 11.8L13.9 17.2H18.1L14.7 22" />
     </>
   ),
+  // Doorway: a corbel arch (jambs, stepped-in sides, a flat capstone) with its
+  // opening standing on the ground line, and a bolt in the opening beyond.
+  lightning: (
+    <>
+      <path d="M4 27.6H28" />
+      <path d="M7.6 27.6V15.4L13.4 4.6H18.6L24.4 15.4V27.6" />
+      <path d="M11.2 27.6V16.2L15 9H17L20.8 16.2V27.6" />
+      <path d="M17 13.6L14.4 18.8H17.6L15 24" />
+    </>
+  ),
 };
 
 /** The same glow on every glyph: a tight halo plus a soft bloom. */
 const GLOW = "drop-shadow(0 0 1.5px rgba(79,244,198,0.85)) drop-shadow(0 0 5px rgba(79,244,198,0.45))";
 
-/** One header glyph, `size` px square. Decorative: the button around it carries the label. */
-export function GlyphIcon({ name, size }: { name: GlyphName; size: number }) {
+/** One header glyph, `size` px square (or a CSS length). Decorative: the button around it carries the label. */
+export function GlyphIcon({ name, size }: { name: GlyphName; size: number | string }) {
   return (
     <svg
       aria-hidden
