@@ -2,19 +2,20 @@
 // Round header buttons around the wallet line glyphs.
 // MIT License
 
+import type { CSSProperties } from "react";
 import Link from "next/link";
 import { GlyphIcon, type GlyphName } from "./GlyphIcons";
 
+// Every header circle is the same size: 52px, or the `--glyph` length the
+// header sets so a full row still fits a narrow phone. An explicit `size`
+// (px) overrides both.
+const box = (size?: number): CSSProperties =>
+  size ? { width: size, height: size } : { width: "var(--glyph, 52px)", height: "var(--glyph, 52px)" };
+
 /** Round header button around one of the line glyphs in GlyphIcons. */
-export function Glyph({ name, label, onClick, size = 52 }: { name: GlyphName; label: string; onClick: () => void; size?: number }) {
+export function Glyph({ name, label, onClick, size }: { name: GlyphName; label: string; onClick: () => void; size?: number }) {
   return (
-    <button
-      onClick={onClick}
-      aria-label={label}
-      title={label}
-      className={GLYPH_CLS}
-      style={{ width: size, height: size }}
-    >
+    <button onClick={onClick} aria-label={label} title={label} className={GLYPH_CLS} style={box(size)}>
       <GlyphIcon name={name} size={glyphSize(size)} />
     </button>
   );
@@ -26,12 +27,12 @@ const GLYPH_CLS =
 // The glyph box is 70% of the button, so the middle 26 units the glyphs are
 // drawn in span about 57% of the circle: at 52px every stroke stays 8px or
 // more clear of the frame.
-const glyphSize = (size: number) => Math.round(size * 0.7);
+const glyphSize = (size?: number) => (size ? Math.round(size * 0.7) : "70%");
 
 /** Header link to the tip board (/creator), drawn in the same glyph family. */
-export function TipsGlyph({ size = 52 }: { size?: number }) {
+export function TipsGlyph({ size }: { size?: number }) {
   return (
-    <Link href="/creator" aria-label="Tip board" title="Tip board" className={GLYPH_CLS} style={{ width: size, height: size }}>
+    <Link href="/creator" aria-label="Tip board" title="Tip board" className={GLYPH_CLS} style={box(size)}>
       <GlyphIcon name="tips" size={glyphSize(size)} />
     </Link>
   );

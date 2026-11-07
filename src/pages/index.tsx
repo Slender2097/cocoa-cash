@@ -6,6 +6,7 @@
 // (and from there the write-ahead journal); nothing here touches proofs.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import Head from "next/head";
 import Image from "next/image";
 import useCashu from "@/hooks/useCashu";
@@ -17,6 +18,7 @@ import Orbs from "@/components/wallet/Orbs";
 import type { FlowType } from "@/components/wallet/Orbs";
 import { Glyph, TipsGlyph } from "@/components/wallet/HeaderGlyphs";
 import FlowSheet from "@/components/wallet/FlowSheet";
+import LightningSheet from "@/components/wallet/LightningSheet";
 import MintsPanel from "@/components/wallet/MintsPanel";
 import SeedVault from "@/components/wallet/SeedVault";
 import HistoryPanel from "@/components/wallet/HistoryPanel";
@@ -26,7 +28,14 @@ import Scanner from "@/components/wallet/Scanner";
 import WelcomeModal from "@/components/wallet/WelcomeModal";
 import { mintLabel } from "@/lib/utils/mintLabel";
 
-type Panel = { k: "flow"; type: FlowType } | { k: "mints"; note?: string } | { k: "vault" } | { k: "history" } | { k: "menu" } | null;
+type Panel =
+  | { k: "flow"; type: FlowType }
+  | { k: "lightning" }
+  | { k: "mints"; note?: string }
+  | { k: "vault" }
+  | { k: "history" }
+  | { k: "menu" }
+  | null;
 
 const SIGN: Record<string, number> = { mint: 1, "swap-claim": 1, melt: -1, "swap-send": -1 };
 
@@ -166,7 +175,8 @@ export default function Home() {
             <Image src="/jaguar-logo.png" alt="cocoa.cash" width={80} height={60} className="h-14 w-auto drop-shadow-[0_0_14px_rgba(79,244,198,0.7)]" priority />
             <span className="hidden text-lg font-light tracking-[0.2em] text-[#e8fff7]/80 sm:inline">cocoa</span>
           </button>
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* five circles: on a narrow phone they all shrink together (to 44px at 360px wide) so the row still fits */}
+          <div className="flex items-center gap-1.5 sm:gap-2" style={{ "--glyph": "clamp(44px, calc((100vw - 144px) / 5), 52px)" } as CSSProperties}>
             <Glyph name="mints" label="Mints" onClick={() => setPanel({ k: "mints" })} />
             <Glyph name="history" label="History" onClick={() => setPanel({ k: "history" })} />
             <span className="relative">
@@ -174,6 +184,7 @@ export default function Home() {
               {securityLevel < 2 && <span className="pointer-events-none absolute right-0 top-0 h-2.5 w-2.5 rounded-full bg-amber-300 shadow-[0_0_8px_#fcd34d]" />}
             </span>
             <TipsGlyph />
+            <Glyph name="lightning" label="Lightning in / out" onClick={() => setPanel({ k: "lightning" })} />
           </div>
         </header>
 
@@ -188,7 +199,7 @@ export default function Home() {
             still={coreStill}
             onMints={() => setPanel({ k: "mints" })}
           />
-          <Orbs disabled={false} resting={resting} still={backdropStill} onPick={openFlow} />
+          <Orbs types={["send", "claim"]} disabled={false} resting={resting} still={backdropStill} onPick={openFlow} />
         </main>
       </div>
 
@@ -214,6 +225,10 @@ export default function Home() {
           onScan={(apply) => setScanApply(() => apply)}
           onClose={close}
         />
+      )}
+      {panel?.k === "lightning" && (
+        // Picking Mint or Melt swaps this sheet for that action's own panel.
+        <LightningSheet onPick={openFlow} onClose={close} resting={resting} still={dormant} />
       )}
       {panel?.k === "mints" && (
         <MintsPanel

@@ -1,5 +1,6 @@
 // src/components/wallet/Orbs.tsx
-// The four wallet actions as glowing orbs. Each one carries a calm idle
+// The wallet actions as glowing orbs: Send and Claim on the wallet screen,
+// Mint and Melt in the Lightning sheet. Each one carries a calm idle
 // energy (a slight swell and a glow pulse) on its own slow rhythm, and the
 // glow goes quieter while the wallet rests.
 // MIT License
@@ -54,11 +55,14 @@ const BREATH = [
 ];
 
 export default function Orbs({
+  types,
   disabled,
   resting = false,
   still = false,
   onPick,
 }: {
+  /** Which actions to show, in order. */
+  types: FlowType[];
   disabled: boolean;
   /** True after a while without input: the glow goes quieter. */
   resting?: boolean;
@@ -67,18 +71,21 @@ export default function Orbs({
   onPick: (t: FlowType) => void;
 }) {
   return (
-    <div className={`${resting ? fx.resting : ""} grid w-full max-w-md grid-cols-4 gap-2 sm:gap-6`} data-still={still || undefined}>
-      {FLOWS.map((f, i) => (
+    <div className={`${resting ? fx.resting : ""} flex w-full justify-center gap-10 sm:gap-14`} data-still={still || undefined}>
+      {FLOWS.filter((f) => types.includes(f.type)).map((f) => {
+        // each action keeps its own rhythm wherever it is shown
+        const breath = BREATH[FLOWS.indexOf(f)];
+        return (
         <button
           key={f.type}
           onClick={() => onPick(f.type)}
           disabled={disabled}
-          className="group flex flex-col items-center gap-2 disabled:opacity-35"
+          className="group flex w-[88px] flex-col items-center gap-2 disabled:opacity-35"
           data-testid={`orb-${f.type}`}
         >
           <span
             className={disabled ? undefined : fx.breath}
-            style={{ "--every": `${BREATH[i].every}s`, "--at": `${BREATH[i].at}s` } as React.CSSProperties}
+            style={{ "--every": `${breath.every}s`, "--at": `${breath.at}s` } as React.CSSProperties}
           >
             <span
               className="relative grid h-[72px] w-[72px] place-items-center rounded-full text-[#a3ffe0] transition duration-300 group-hover:scale-105 group-active:scale-95 group-disabled:scale-100 sm:h-20 sm:w-20"
@@ -101,7 +108,8 @@ export default function Orbs({
           <span className="text-base font-medium text-[#e8fff7]">{f.label}</span>
           <span className="-mt-2 text-[11px] text-[#e8fff7]/45">{f.hint}</span>
         </button>
-      ))}
+        );
+      })}
     </div>
   );
 }
