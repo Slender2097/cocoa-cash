@@ -11,17 +11,10 @@ import Link from "next/link";
 import Image from "next/image";
 import Cosmos from "@/components/wallet/Cosmos";
 import { MintWarning } from "@/components/ui/MintWarning";
-import {
-  KNOWN_MINTS,
-  DEFAULT_RELAYS,
-  normalizeMint,
-  isKnownMint,
-  buildEmbed,
-  walletMintKey,
-} from "@/lib/tip/config";
+import { DEFAULT_RELAYS, normalizeMint, buildEmbed, walletMintKey } from "@/lib/tip/config";
 import { generateSecretKey, getPublicKey, npubEncode, nsecEncode, nsecDecode } from "@/lib/tip/nut18";
 import { seal, unseal } from "@/lib/tip/seal";
-import { readProofs, sumProofs, rememberMint, requestPersistentStorage, toStoredProof, PROOFS_EVENT } from "@/lib/cashu/storage";
+import { readProofs, sumProofs, rememberMint, isSavedMint, requestPersistentStorage, toStoredProof, PROOFS_EVENT } from "@/lib/cashu/storage";
 import type { ProofsByMint, StoredProof } from "@/lib/cashu/storage";
 import { backupTokens } from "@/lib/cashu/backup";
 import type { BackupToken } from "@/lib/cashu/backup";
@@ -134,14 +127,15 @@ function SettingsForm({
   const [error, setError] = useState<string | null>(null);
 
   const mintList = mints.split(",").map(normalizeMint).filter(Boolean);
-  const unknown = mintList.filter((m) => !isKnownMint(m));
+  // Mints the user has not added to their own list (wallet Mints) yet: ask them to confirm trust.
+  const unknown = mintList.filter((m) => !isSavedMint(m));
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     if (!mintList.length) return setError("Add at least one mint");
     if (amount && !(parseInt(amount, 10) > 0)) return setError("Amount must be a positive number, or empty for any amount");
-    if (unknown.length && !trust) return setError("Confirm that you trust the mint(s) not in the known list");
+    if (unknown.length && !trust) return setError("Confirm that you trust the mint(s) not in your mints list");
     if (isNew) {
       const passError = passphraseError(pass, pass2);
       if (passError) return setError(passError);
@@ -175,18 +169,6 @@ function SettingsForm({
         Mint (one, or a short list separated by commas). The first one is used for Lightning.
         <input className={inputCls + " mt-2"} value={mints} onChange={(e) => setMints(e.target.value)} placeholder="https://mint.example.com" />
       </label>
-      <div className="flex flex-wrap gap-2 -mt-2">
-        {KNOWN_MINTS.map((m) => (
-          <button
-            type="button"
-            key={m}
-            className="text-xs px-3 py-1 rounded-2xl bg-white/5 hover:bg-white/10"
-            onClick={() => setMints((prev) => (prev.trim() ? `${prev.trim()}, ${m}` : m))}
-          >
-            + {m.replace("https://", "")}
-          </button>
-        ))}
-      </div>
       {unknown.length > 0 && <MintWarning mints={unknown} context="tip" trusted={trust} onTrust={setTrust} />}
       <div className="grid grid-cols-2 gap-3">
         <label className="text-sm">
@@ -492,7 +474,7 @@ export default function CreatorPage() {
                 <div className="text-sm space-y-1">
                   {config.mints.map((m) => (
                     <p key={m} className="break-all">
-                      {m} {!isKnownMint(m) && <span className="text-yellow-200">⚠️ not in the known list</span>}
+                      {m}
                     </p>
                   ))}
                   <p className="opacity-80">Amount: {config.amount ? `${config.amount} sats` : "any"}</p>

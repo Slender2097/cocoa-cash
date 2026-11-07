@@ -10,7 +10,7 @@ You can add a Cashu tip or donate button to any web page. Visitors pay with Ligh
 
 Open **https://cocoa.cash/creator** and set:
 
-- **Mint:** one mint URL, or a short list separated by commas. You'll see a warning if a mint isn't in the built-in list.
+- **Mint:** one mint URL, or a short list separated by commas. Any Cashu mint works; cocoa.cash doesn't suggest one. You'll be asked to confirm you trust any mint that isn't already in your mints list.
 - **Amount:** a fixed number of sats, or leave it empty so visitors choose.
 - **Passphrase:** locks the board in this browser. cocoa.cash never sees it.
 
