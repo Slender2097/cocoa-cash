@@ -36,6 +36,14 @@
 .driftB {
   position: absolute;
   inset: 0;
+  /* Own layers: the big blurred patches are drawn once and only moved. */
+  will-change: transform, opacity;
+}
+
+/* The circuit's moving traces repaint the SVG every frame; keep that repaint
+   on the SVG's own layer instead of the layer that holds the blurred field. */
+.circuit {
+  will-change: transform;
 }
 .driftA {
   animation:

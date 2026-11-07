@@ -122,6 +122,7 @@ export default function BalanceCore({
   processing = false,
   covered = false,
   resting = false,
+  still = false,
   onMints,
 }: {
   balance: number;
@@ -133,6 +134,8 @@ export default function BalanceCore({
   covered?: boolean;
   /** True after a while without input. The core breathes slower and deeper. */
   resting?: boolean;
+  /** True when nobody is looking: the ambient loops hold their current frame. */
+  still?: boolean;
   onMints: () => void;
 }) {
   const ringGradient = useId();
@@ -211,6 +214,7 @@ export default function BalanceCore({
         data-busy={processing || undefined}
         data-covered={covered || undefined}
         data-waking={wake.kind ?? undefined}
+        data-still={still || undefined}
       >
         {/* Everything but the number: dims and focuses with the mood. */}
         <div aria-hidden className={fx.stage}>

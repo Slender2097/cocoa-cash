@@ -191,3 +191,13 @@
 #qr-reader a {
   color: #4ff4c6;
 }
+
+/* Still: nobody is looking (idle, in the background, or under a panel), so the
+   ambient loops hold the frame they are on and pick up from it again at the
+   next touch. Nothing changes how they look; the GPU just stops redrawing. */
+[data-still],
+[data-still] *,
+[data-still] *::before,
+[data-still] *::after {
+  animation-play-state: paused !important;
+}
