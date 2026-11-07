@@ -19,7 +19,6 @@ import type { FlowType } from "@/components/wallet/Orbs";
 import { Glyph, TipsGlyph } from "@/components/wallet/HeaderGlyphs";
 import FlowSheet from "@/components/wallet/FlowSheet";
 import LightningSheet from "@/components/wallet/LightningSheet";
-import type { LightningType } from "@/components/wallet/LightningSheet";
 import MintsPanel from "@/components/wallet/MintsPanel";
 import SeedVault from "@/components/wallet/SeedVault";
 import HistoryPanel from "@/components/wallet/HistoryPanel";
@@ -31,7 +30,7 @@ import { mintLabel } from "@/lib/utils/mintLabel";
 
 type Panel =
   | { k: "flow"; type: FlowType }
-  | { k: "lightning"; type?: LightningType }
+  | { k: "lightning" }
   | { k: "mints"; note?: string }
   | { k: "vault" }
   | { k: "history" }
@@ -101,7 +100,7 @@ export default function Home() {
 
   // Results that arrive while no action panel is open (mint connect, a paid
   // invoice finishing in the background) become a short toast.
-  const flowOpen = panel?.k === "flow" || (panel?.k === "lightning" && !!panel.type);
+  const flowOpen = panel?.k === "flow";
   useEffect(() => {
     if (!dataOutput || flowOpen) return;
     let next: { text: string; tone: "ok" | "error" } | null = null;
@@ -153,12 +152,6 @@ export default function Home() {
   const openFlow = (type: FlowType) => {
     if (!walletReady || !activeMint) return setPanel({ k: "mints", note: "Connect a mint first." });
     setPanel({ k: "flow", type });
-  };
-
-  // Mint and Melt run inside the Lightning sheet instead of their own panel.
-  const openLightning = (type: LightningType) => {
-    if (!walletReady || !activeMint) return setPanel({ k: "mints", note: "Connect a mint first." });
-    setPanel({ k: "lightning", type });
   };
 
   const connect = (url: string) => {
@@ -234,20 +227,8 @@ export default function Home() {
         />
       )}
       {panel?.k === "lightning" && (
-        <LightningSheet
-          type={panel.type}
-          onPick={openLightning}
-          onBack={() => setPanel({ k: "lightning" })}
-          resting={resting}
-          still={dormant}
-          balance={balance || 0}
-          dataOutput={dataOutput}
-          isProcessing={isProcessing}
-          run={run}
-          confirm={confirm}
-          onScan={(apply) => setScanApply(() => apply)}
-          onClose={close}
-        />
+        // Picking Mint or Melt swaps this sheet for that action's own panel.
+        <LightningSheet onPick={openFlow} onClose={close} resting={resting} still={dormant} />
       )}
       {panel?.k === "mints" && (
         <MintsPanel
