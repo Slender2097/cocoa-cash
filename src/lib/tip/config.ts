@@ -1,20 +1,11 @@
 // src/lib/tip/config.ts
-// Tip-embed configuration: query params, mint allowlist, URL helpers.
+// Tip-embed configuration: query params, the creator's mint allowlist, URL helpers.
 // MIT License
 
 import * as nip19 from "nostr-tools/nip19";
 import { normalizeMint, walletMintKey } from "@/lib/cashu/storage";
 
 export { normalizeMint, walletMintKey };
-
-// Short built-in list of mints we know about. Not an endorsement: any mint
-// works, the UI only warns when a creator picks one that is not listed here.
-export const KNOWN_MINTS = [
-  "https://mint.minibits.cash/Bitcoin",
-  "https://mint.coinos.io",
-  "https://mint.lnvoltz.com",
-  "https://mint.cubabitcoin.org",
-];
 
 // Nostr relays used for the NUT-18 nostr transport (NIP-17 DMs) when the
 // creator does not pick their own.
@@ -23,9 +14,6 @@ export const DEFAULT_RELAYS = [
   "wss://nos.lol",
   "wss://relay.primal.net",
 ];
-
-export const isKnownMint = (url: string) =>
-  KNOWN_MINTS.map(normalizeMint).includes(normalizeMint(url));
 
 // Accepts npub1..., nprofile1... or 64-char hex. Returns x-only hex pubkey.
 export function parsePubkey(input: unknown): string {
