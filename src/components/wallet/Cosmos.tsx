@@ -41,12 +41,13 @@ const onNode = ([x, y]: [number, number]): CSSProperties => ({
   top: `calc(50cqh + ${(((y - 512) / 1024) * 100).toFixed(3)}cqmax)`,
 });
 
-export default function Cosmos({ resting = false }: { resting?: boolean }) {
+export default function Cosmos({ resting = false, still = false }: { resting?: boolean; still?: boolean }) {
   return (
     <div
       aria-hidden
       className={`${fx.cosmos} pointer-events-none fixed inset-0 -z-10 overflow-hidden`}
       data-resting={resting || undefined}
+      data-still={still || undefined}
     >
       <div className={fx.space}>
         <div className={fx.driftA}>
@@ -61,7 +62,7 @@ export default function Cosmos({ resting = false }: { resting?: boolean }) {
             style={{ background: "radial-gradient(circle, rgba(163,255,224,0.12) 0%, rgba(163,255,224,0) 60%)" }}
           />
         </div>
-        <svg className="absolute inset-0 h-full w-full" viewBox="0 0 1024 1024" preserveAspectRatio="xMidYMid slice">
+        <svg className={`${fx.circuit} absolute inset-0 h-full w-full`} viewBox="0 0 1024 1024" preserveAspectRatio="xMidYMid slice">
           <g fill="none" strokeLinecap="round">
             {TRACES.map((d, i) => (
               <path key={i} d={d} stroke="rgba(79,244,198,0.07)" strokeWidth="1.2" />

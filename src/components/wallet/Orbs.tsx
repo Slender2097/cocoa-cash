@@ -56,15 +56,18 @@ const BREATH = [
 export default function Orbs({
   disabled,
   resting = false,
+  still = false,
   onPick,
 }: {
   disabled: boolean;
   /** True after a while without input: the glow goes quieter. */
   resting?: boolean;
+  /** True when nobody is looking: the idle glow holds still. */
+  still?: boolean;
   onPick: (t: FlowType) => void;
 }) {
   return (
-    <div className={`${resting ? fx.resting : ""} grid w-full max-w-md grid-cols-4 gap-2 sm:gap-6`}>
+    <div className={`${resting ? fx.resting : ""} grid w-full max-w-md grid-cols-4 gap-2 sm:gap-6`} data-still={still || undefined}>
       {FLOWS.map((f, i) => (
         <button
           key={f.type}

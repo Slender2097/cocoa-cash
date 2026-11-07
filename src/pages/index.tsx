@@ -10,6 +10,7 @@ import Head from "next/head";
 import Image from "next/image";
 import useCashu from "@/hooks/useCashu";
 import useIdle from "@/hooks/useIdle";
+import { useHeld, usePageHidden } from "@/hooks/useStill";
 import Cosmos from "@/components/wallet/Cosmos";
 import BalanceCore from "@/components/wallet/BalanceCore";
 import Orbs from "@/components/wallet/Orbs";
@@ -31,7 +32,14 @@ const SIGN: Record<string, number> = { mint: 1, "swap-claim": 1, melt: -1, "swap
 
 // After this long without input the wallet goes quiet (slower, deeper glow),
 // and it wakes at the first touch, key or pointer move.
-const REST_AFTER_MS = 30_000;
+const REST_AFTER_MS = 15_000;
+// A little later the ambient loops (rings, glows, backdrop) freeze where they
+// are, and they freeze at once in the background. Under a panel they freeze
+// once its opening moment has played. Anything that only reacts (sats in or
+// out, a running action) still plays. This is what keeps a phone left on the
+// wallet from warming up.
+const STILL_AFTER_MS = 25_000;
+const COVER_SETTLE_MS = 1_200;
 
 export default function Home() {
   const {
@@ -56,6 +64,14 @@ export default function Home() {
   const [panel, setPanel] = useState<Panel>(null);
   const [scanApply, setScanApply] = useState<((t: string) => void) | null>(null);
   const [welcome, setWelcome] = useState(false);
+  const covered = !!panel || !!scanApply || welcome;
+  const hidden = usePageHidden();
+  const longIdle = useIdle(STILL_AFTER_MS);
+  const coverSettled = useHeld(covered, COVER_SETTLE_MS);
+  const dormant = hidden || (longIdle && !isProcessing);
+  // The core keeps pulsing under a panel while an action runs; the rest does not need to.
+  const backdropStill = dormant || coverSettled;
+  const coreStill = dormant || (coverSettled && !isProcessing);
   const [toast, setToast] = useState<{ text: string; tone: "ok" | "error" } | null>(null);
   const [transactions, setTransactions] = useState<Tx[]>([]);
 
@@ -141,7 +157,7 @@ export default function Home() {
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <meta name="theme-color" content="#07110d" />
       </Head>
-      <Cosmos resting={resting} />
+      <Cosmos resting={resting} still={backdropStill} />
 
       {/* overflow-x-clip: the core's glow and waves may reach past the page, never make it scroll sideways. */}
       <div className="mx-auto flex min-h-[100dvh] max-w-xl flex-col overflow-x-clip px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))]">
@@ -167,11 +183,12 @@ export default function Home() {
             mint={activeMint}
             connected={walletReady && !!activeMint}
             processing={isProcessing}
-            covered={!!panel || !!scanApply || welcome}
+            covered={covered}
             resting={resting}
+            still={coreStill}
             onMints={() => setPanel({ k: "mints" })}
           />
-          <Orbs disabled={false} resting={resting} onPick={openFlow} />
+          <Orbs disabled={false} resting={resting} still={backdropStill} onPick={openFlow} />
         </main>
       </div>
 
