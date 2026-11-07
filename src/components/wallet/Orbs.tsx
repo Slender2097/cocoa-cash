@@ -40,9 +40,9 @@ const ICONS: Record<FlowType, React.ReactNode> = {
 
 export const FLOWS: { type: FlowType; label: string; hint: string }[] = [
   { type: "mint", label: "Mint", hint: "Lightning in" },
-  { type: "melt", label: "Melt", hint: "Pay Lightning" },
+  { type: "melt", label: "Melt", hint: "Lightning out" },
   { type: "send", label: "Send", hint: "Ecash out" },
-  { type: "claim", label: "Claim", hint: "Ecash in" },
+  { type: "claim", label: "Receive", hint: "Ecash in" },
 ];
 
 // Energy per orb: cycle length and phase (s). The cycles differ a little, so
