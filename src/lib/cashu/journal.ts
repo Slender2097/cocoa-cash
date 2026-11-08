@@ -23,10 +23,10 @@
 // MIT License
 
 import { Amount, MintQuoteState, MeltQuoteState, CheckStateEnum, getEncodedToken, getTokenMetadata, isMintOperationError } from "@cashu/cashu-ts";
-import type { MintPreview, MeltPreview, SwapPreview, Proof, Wallet, P2PKOptions, ProofLike, MeltQuoteBolt11Response } from "@cashu/cashu-ts";
+import type { MintPreview, MeltPreview, SwapPreview, Proof, Wallet, P2PKOptions, ProofLike, MeltQuoteBolt11Response, MintQuoteBolt11Response, SerializedBlindedSignature } from "@cashu/cashu-ts";
 import { addProofs, removeProofs, normalizeMint, readJSON, writeJSON, sumProofs, toStoredProof, readProofs, walletMintKey } from "./storage";
 import type { StoredProof } from "./storage";
-import { getWallet, serializeOutputs, deserializeOutputs, restoreOutputs, errText } from "./outputs";
+import { getWallet, serializeOutputs, deserializeOutputs, restoreOutputs, errText, patchedMintRequest } from "./outputs";
 import type { SerializedOutput } from "./outputs";
 import { withWalletLock, ifWalletLockFree } from "./lock";
 
@@ -127,9 +127,29 @@ async function inputsStillUnspent(wallet: Wallet, inputs: StoredProof[]): Promis
 // Shared building blocks (also used by the tip embed)
 // ---------------------------------------------------------------------------
 
+/**
+ * NUT-04 quote state. The reply is read leniently: cashu-ts 4 throws on a
+ * reply without `amount` (older mints leave it out of GET /v1/mint/quote), and
+ * very old mints send `paid` instead of `state`. Such a throw used to be
+ * swallowed by the recovery loop, so a paid invoice stayed UNPAID forever.
+ * `amount` is the amount this wallet asked the quote for.
+ */
+export async function checkMintQuoteState(wallet: Wallet, mintUrl: string, quoteId: string, amount: number): Promise<MintQuoteState> {
+  const lenient = patchedMintRequest(mintUrl, (res) => ({
+    ...res,
+    amount: res.amount ?? amount,
+    unit: res.unit ?? "sat",
+    state: typeof res.state === "string" ? res.state : res.issued ? MintQuoteState.ISSUED : res.paid ? MintQuoteState.PAID : MintQuoteState.UNPAID,
+  }));
+  const q = await wallet.mint.checkMintQuoteBolt11(quoteId, lenient);
+  return q.state;
+}
+
 /** Build outputs for a paid NUT-04 quote. Optional NUT-11 P2PK lock. */
 export async function prepareMintOutputs(wallet: Wallet, amount: number, quoteId: string, p2pk?: P2PKOptions) {
-  let builder = wallet.ops.mintBolt11(amount, quoteId);
+  // Only the quote id is needed. A bare string would make cashu-ts fetch and
+  // strictly re-validate the quote, which fails on the same older mints.
+  let builder = wallet.ops.mintBolt11(amount, { quote: quoteId } as MintQuoteBolt11Response);
   if (p2pk) builder = builder.asP2PK(p2pk);
   const preview = await builder.prepare();
   return { outputs: serializeOutputs(preview.outputData), keysetId: preview.keysetId };
@@ -205,16 +225,23 @@ async function startMintUnlocked(mint: string, amount: number): Promise<MintOp> 
   });
 }
 
+// An unpaid quote is given up only this long after its expiry (the phone's
+// clock may run ahead of the mint's), or a day after creation if the mint set
+// no expiry (and for quotes imported from the old pendingMints list).
+const EXPIRY_GRACE_MS = 10 * 60_000;
+const NO_EXPIRY_MS = 24 * 60 * 60_000;
+
 async function advanceMintUnlocked(id: string): Promise<MintOp> {
   let op = getOp(id) as MintOp;
   const wallet = await getWallet(op.mint);
   if (op.state === "UNPAID") {
-    const q = await wallet.checkMintQuoteBolt11(op.id);
-    if (q.state === MintQuoteState.UNPAID) {
-      if (op.expiry && Date.now() > op.expiry) op = putOp<MintOp>(id, { state: "EXPIRED" });
+    const state = await checkMintQuoteState(wallet, op.mint, op.id, op.amount);
+    if (state === MintQuoteState.UNPAID) {
+      const giveUpAt = op.expiry ? op.expiry + EXPIRY_GRACE_MS : op.createdAt + NO_EXPIRY_MS;
+      if (Date.now() > giveUpAt) op = putOp<MintOp>(id, { state: "EXPIRED" });
       return op;
     }
-    if (!op.outputs && q.state === MintQuoteState.ISSUED) {
+    if (!op.outputs && state === MintQuoteState.ISSUED) {
       // Issued to outputs we never recorded (e.g. another device): nothing to recover here.
       return putOp<MintOp>(id, { state: "FAILED", error: "Quote was already issued" });
     }
@@ -233,7 +260,7 @@ async function advanceMintUnlocked(id: string): Promise<MintOp> {
     } catch (e) {
       op = putOp<MintOp>(id, { error: errText(e) }); // stays ISSUING; retried later
       try {
-        if ((await wallet.checkMintQuoteBolt11(op.id)).state === MintQuoteState.ISSUED) {
+        if ((await checkMintQuoteState(wallet, op.mint, op.id, op.amount)) === MintQuoteState.ISSUED) {
           // Issued: NUT-09 is authoritative. Only an empty (not failed) restore is final.
           const restored = await restoreOutputs(wallet, deserializeOutputs(op.outputs));
           if (restored.length) {
@@ -304,7 +331,16 @@ async function advanceMeltUnlocked(id: string): Promise<MeltOp> {
   const wallet = await getWallet(op.mint);
   const outputData = deserializeOutputs(op.outputs);
 
-  const finishPaid = async (change: Proof[], preimage?: string | null) => {
+  const finishPaid = async (change: Proof[], preimage?: string | null, changeSigs?: SerializedBlindedSignature[] | null) => {
+    if (!change.length && changeSigs?.length && outputData.length) {
+      // NUT-08: a paid quote carries the change signatures. Unblind them with
+      // the persisted blanks; no NUT-09 restore needed (some mints lack it).
+      try {
+        change = wallet.createMeltChangeProofs(outputData, changeSigs);
+      } catch {
+        change = []; // fall back to NUT-09 below
+      }
+    }
     if (!change.length && outputData.length) {
       try {
         change = await restoreOutputs(wallet, outputData); // NUT-09 for NUT-08 change
@@ -348,7 +384,7 @@ async function advanceMeltUnlocked(id: string): Promise<MeltOp> {
     } catch (e) {
       return putOp<MeltOp>(id, { error: errText(e) });
     }
-    if (q.state === MeltQuoteState.PAID) return finishPaid([], q.payment_preimage);
+    if (q.state === MeltQuoteState.PAID) return finishPaid([], q.payment_preimage, q.change);
     if (q.state === MeltQuoteState.UNPAID && mintAnswered) {
       // Without an answer, a refund now could race a request still on its way: decide on a later round.
       const unspent = await inputsStillUnspent(wallet, op.inputs);
@@ -543,17 +579,23 @@ export function importLegacyPendingMints(): void {
 }
 
 async function recoverOpenUnlocked(mint: string, privkey?: string): Promise<void> {
-  for (const op of openOps(mint)) {
+  // Mint quotes first: that is what someone is watching a QR code for.
+  const ops = openOps(mint).sort((a, b) => Number(b.kind === "mint") - Number(a.kind === "mint"));
+  for (const op of ops) {
     try {
       if (op.kind === "mint") await advanceMintUnlocked(op.id);
       else if (op.kind === "melt") await advanceMeltUnlocked(op.id);
       else if (op.kind === "send") await advanceSendUnlocked(op.id);
       else if (op.kind === "receive" && (!op.needsKey || privkey)) await advanceReceiveUnlocked(op.id, privkey);
-    } catch {
-      // network trouble: next round
+    } catch (e) {
+      // network trouble or an odd reply: keep the reason on the record, try again next round
+      if (getOp(op.id)) putOp(op.id, { error: errText(e) });
     }
   }
 }
+
+/** Mints that have unfinished operations in this browser. */
+export const mintsWithOpenOps = (): string[] => [...new Set(openOps().map((o) => normalizeMint(o.mint)).filter(Boolean))];
 
 // ---------------------------------------------------------------------------
 // Entry points. Each one holds the cross-tab wallet lock (./lock.ts) for the

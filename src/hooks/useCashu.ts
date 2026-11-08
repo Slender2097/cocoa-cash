@@ -24,6 +24,7 @@ import {
   dropSpentProofs,
   recoverOpen,
   openOps,
+  mintsWithOpenOps,
   getOp,
   importLegacyPendingMints,
 } from "@/lib/cashu/journal";
@@ -121,29 +122,68 @@ export default function useCashu(): UseCashu {
     handleSetMint(activeMint, { silent: true });
   }, [hydrated, activeMint, handleSetMint]);
 
-  // Drive open operations (unpaid invoices, pending melts...) while the page is open.
+  // Drive open operations (unpaid invoices, pending melts...) while the page is
+  // open: poll each unpaid NUT-04 quote until the mint says PAID, then mint the
+  // proofs into this browser at once. Runs for every mint with open operations,
+  // even while the active mint is not connected (getWallet retries the
+  // connection), and right away when the page comes back into view, since
+  // browsers slow timers down in background tabs.
+  const walletReadyRef = useRef(walletReady);
   useEffect(() => {
-    if (!walletReady || !activeMint) return;
+    walletReadyRef.current = walletReady;
+  }, [walletReady]);
+  const kick = useRef<() => void>(() => {});
+  useEffect(() => {
+    if (!hydrated) return;
     let stopped = false;
+    let running = false;
+    let lastConnect = 0;
     const tick = async () => {
-      const before = openOps(activeMint).filter((o) => o.kind === "mint").map((o) => o.id);
-      if (!openOps(activeMint).length) return;
-      // Only runs while this tab can take the wallet lock; otherwise wait for the next tick.
-      await recoverOpen(activeMint, undefined, { background: true }).catch(() => {});
-      if (stopped) return;
-      for (const id of before) {
-        const op = getOp(id) as MintOp | null;
-        if (op?.state === "DONE" && !busy.current) {
-          setDataOutput({ status: "Mint successful ✓", type: "mint", amount: op.amount, receivedProofs: 1 });
+      if (stopped || running) return;
+      // The last mint did not connect on load: try again now and then, so its operations can resume.
+      if (activeMint && !walletReadyRef.current && Date.now() - lastConnect > 15_000) {
+        lastConnect = Date.now();
+        handleSetMint(activeMint, { silent: true });
+      }
+      const mints = mintsWithOpenOps();
+      if (!mints.length) return;
+      running = true;
+      try {
+        const watching = openOps().filter((o) => o.kind === "mint").map((o) => o.id);
+        for (const mint of mints) {
+          if (stopped) return;
+          // Only runs while this tab can take the wallet lock; otherwise wait for the next tick.
+          await recoverOpen(mint, undefined, { background: true }).catch(() => {});
         }
+        if (stopped) return;
+        for (const id of watching) {
+          const op = getOp(id) as MintOp | null;
+          if (op?.state === "DONE" && !busy.current) {
+            setDataOutput({ status: "Mint successful ✓", type: "mint", amount: op.amount, receivedProofs: 1 });
+          }
+        }
+      } finally {
+        running = false;
       }
     };
-    const t = setInterval(tick, 4000);
+    kick.current = () => void tick();
+    const t = setInterval(tick, 3000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    window.addEventListener("online", onVisible);
+    void tick();
     return () => {
       stopped = true;
+      kick.current = () => {};
       clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+      window.removeEventListener("online", onVisible);
     };
-  }, [walletReady, activeMint]);
+  }, [hydrated, activeMint, handleSetMint]);
 
   const guard = (): boolean => {
     if (!walletReady || !activeMint) {
@@ -161,6 +201,7 @@ export default function useCashu(): UseCashu {
     try {
       const op = await startMint(activeMint, amount); // NUT-04 quote, journaled first
       setDataOutput({ status: "Invoice created", invoice: op.invoice, quoteId: op.id });
+      setTimeout(() => kick.current(), 1500); // start polling the new quote without waiting for the next tick
     } catch (err) {
       setDataOutput({ error: "Failed to create invoice", details: errText(err) });
     } finally {

@@ -19,7 +19,7 @@ import { readJSON, writeJSON, sumProofs, normalizeMint, toStoredProof } from "@/
 import type { StoredProof } from "@/lib/cashu/storage";
 import { getWallet, fromHex, errText } from "@/lib/cashu/outputs";
 import type { SerializedOutput } from "@/lib/cashu/outputs";
-import { prepareMintOutputs, issueMint, startReceiveUnlocked, advanceReceiveUnlocked, getOp } from "@/lib/cashu/journal";
+import { prepareMintOutputs, issueMint, checkMintQuoteState, startReceiveUnlocked, advanceReceiveUnlocked, getOp } from "@/lib/cashu/journal";
 import { withWalletLock } from "@/lib/cashu/lock";
 import { p2pkPubkey } from "./config";
 import { wrapPayload, publishWrap, fetchPayloads } from "./nut18";
@@ -104,8 +104,8 @@ async function advanceTipUnlocked(id: string): Promise<OutboxRecord> {
 
   if (rec.kind === "lightning" && rec.state === "UNPAID") {
     const wallet = await getWallet(rec.mint);
-    const q = await wallet.checkMintQuoteBolt11(rec.quote!);
-    if (q.state === MintQuoteState.UNPAID) {
+    const state = await checkMintQuoteState(wallet, rec.mint, rec.quote!, rec.amount);
+    if (state === MintQuoteState.UNPAID) {
       if (rec.expiry && Date.now() > rec.expiry) rec = put<OutboxRecord>(OUTBOX, id, { state: "EXPIRED" });
       return rec;
     }
