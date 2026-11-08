@@ -107,6 +107,7 @@ export default function Home() {
     if (dataOutput.error) next = { text: `${dataOutput.error}${dataOutput.details ? `: ${dataOutput.details}` : ""}`, tone: "error" };
     else if (dataOutput.status?.includes("Mint connected")) next = { text: `Connected to ${mintLabel(activeMint)}`, tone: "ok" };
     else if (dataOutput.type === "mint") next = { text: `+${dataOutput.amount} sat received`, tone: "ok" };
+    else if (dataOutput.type === "melt") next = { text: `Paid ${dataOutput.amount} sat`, tone: "ok" };
     if (!next) return;
     setToast(next); // eslint-disable-line react-hooks/set-state-in-effect -- mirrors the hook's latest result
     const t = setTimeout(() => setToast(null), 4000);

@@ -13,7 +13,7 @@ import { Amount, getTokenMetadata } from "@cashu/cashu-ts";
 import type { MeltQuoteBolt11Response } from "@cashu/cashu-ts";
 import useProofStorage from "./useProofStorage";
 import type { ProofStorage } from "./useProofStorage";
-import { getWallet, errText } from "@/lib/cashu/outputs";
+import { getWallet, walletLoaded, errText } from "@/lib/cashu/outputs";
 import { normalizeMint, isSavedMint, rememberMint, amountToNumber } from "@/lib/cashu/storage";
 import {
   startMint,
@@ -28,7 +28,7 @@ import {
   getOp,
   importLegacyPendingMints,
 } from "@/lib/cashu/journal";
-import type { MintOp } from "@/lib/cashu/journal";
+import type { MintOp, MeltOp } from "@/lib/cashu/journal";
 
 export type DataOutput = {
   status?: string;
@@ -75,6 +75,26 @@ export type UseCashu = {
   storage: ProofStorage;
 };
 
+/** The result shown for a melt the mint has paid. */
+const meltPaid = (op: MeltOp): NonNullable<DataOutput> => ({
+  status: "Success ✓",
+  type: "melt",
+  success: `Paid ${op.amount} sats successfully!`,
+  preimage: op.preimage || "N/A",
+  amount: op.amount,
+  feeReserve: op.feeReserve,
+  changeReceived: op.change || 0,
+});
+
+/** Start loading a mint's Wallet without waiting for it (getWallet keeps the one load in flight). */
+const loadInBackground = (mint: string) => {
+  try {
+    getWallet(mint).catch(() => {});
+  } catch {
+    // not a usable mint URL: nothing to load
+  }
+};
+
 export default function useCashu(): UseCashu {
   const storage = useProofStorage();
   const { balance, activeMint, switchMint, hydrated } = storage;
@@ -85,6 +105,9 @@ export default function useCashu(): UseCashu {
   useEffect(() => {
     busy.current = isProcessing;
   }, [isProcessing]);
+  // Melts this tab stopped waiting for ("Payment pending"). The ticker below
+  // says how each one ended once the journal has settled it.
+  const pendingMelts = useRef(new Set<string>());
 
   const handleSetMint = useCallback(
     async (input: string, opts: { silent?: boolean } = {}) => {
@@ -144,6 +167,21 @@ export default function useCashu(): UseCashu {
     let stopped = false;
     let running = false;
     let lastConnect = Date.now(); // the connect on load (above) counts as the first try
+    const reportMelts = () => {
+      if (busy.current) return; // after the action that is running now
+      for (const id of pendingMelts.current) {
+        const op = getOp(id);
+        if (op?.kind !== "melt") {
+          pendingMelts.current.delete(id);
+          continue;
+        }
+        if (op.state !== "DONE" && op.state !== "FAILED") continue;
+        pendingMelts.current.delete(id);
+        setDataOutput(
+          op.state === "DONE" ? meltPaid(op) : { error: "Melt failed", details: "The mint could not pay the invoice. Your sats are back." }
+        );
+      }
+    };
     const tick = async () => {
       if (stopped || running) return;
       // The last mint did not connect on load: try again now and then, so its operations can resume.
@@ -152,25 +190,35 @@ export default function useCashu(): UseCashu {
         handleSetMint(activeMint, { silent: true });
       }
       const mints = mintsWithOpenOps();
-      if (!mints.length) return;
-      running = true;
-      try {
-        const watching = openOps().filter((o) => o.kind === "mint").map((o) => o.id);
-        for (const mint of mints) {
-          if (stopped) return;
-          // Only runs while this tab can take the wallet lock; otherwise wait for the next tick.
-          await recoverOpen(mint, undefined, { background: true }).catch(() => {});
-        }
-        if (stopped) return;
-        for (const id of watching) {
-          const op = getOp(id) as MintOp | null;
-          if (op?.state === "DONE" && !busy.current) {
-            setDataOutput({ status: "Mint successful ✓", type: "mint", amount: op.amount, receivedProofs: 1 });
+      if (mints.length) {
+        running = true;
+        try {
+          const watching = openOps().filter((o) => o.kind === "mint").map((o) => o.id);
+          for (const mint of mints) {
+            if (stopped) return;
+            if (!walletLoaded(mint)) {
+              // Load the mint first, without the wallet lock. A mint that does not
+              // answer takes the full 20 s GET timeout per try, and holding the
+              // lock that long made Pay, Send and Claim wait behind it. Its
+              // operations run on the first round after it has loaded.
+              loadInBackground(mint);
+              continue;
+            }
+            // Only runs while this tab can take the wallet lock; otherwise wait for the next tick.
+            await recoverOpen(mint, undefined, { background: true }).catch(() => {});
           }
+          if (stopped) return;
+          for (const id of watching) {
+            const op = getOp(id) as MintOp | null;
+            if (op?.state === "DONE" && !busy.current) {
+              setDataOutput({ status: "Mint successful ✓", type: "mint", amount: op.amount, receivedProofs: 1 });
+            }
+          }
+        } finally {
+          running = false;
         }
-      } finally {
-        running = false;
       }
+      reportMelts();
     };
     kick.current = () => void tick();
     const t = setInterval(tick, 3000);
@@ -254,19 +302,11 @@ export default function useCashu(): UseCashu {
       const op = await startMelt(mint, invoice, quote); // NUT-05 + NUT-08 change, under the wallet lock
       meltQuotes.current.delete(quoteId);
       if (op.state === "DONE") {
-        setDataOutput({
-          status: "Success ✓",
-          type: "melt",
-          success: `Paid ${op.amount} sats successfully!`,
-          preimage: op.preimage || "N/A",
-          amount: op.amount,
-          feeReserve: op.feeReserve,
-          changeReceived: op.change || 0,
-          estimatedNewBalance: balance - op.amount - op.feeReserve + (op.change || 0),
-        });
+        setDataOutput({ ...meltPaid(op), estimatedNewBalance: balance - op.amount - op.feeReserve + (op.change || 0) });
       } else if (op.state === "FAILED") {
         setDataOutput({ error: "Melt failed", details: op.error || "The mint could not pay the invoice. Your sats are back." });
       } else {
+        pendingMelts.current.add(op.id); // the ticker reports how it ends
         setDataOutput({
           error: "Payment pending",
           details: "The mint is still paying. The sats stay reserved and this wallet will finish or refund it automatically.",
