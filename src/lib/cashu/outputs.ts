@@ -48,6 +48,9 @@ export function deserializeOutputs(list: SerializedOutput[] = []): OutputData[] 
 }
 
 const wallets = new Map<string, Promise<Wallet>>();
+// The request function each mint's Wallet uses (see mintRequest below), so a
+// single call can reuse it with a patched reply (patchedMintRequest).
+const requests = new Map<string, RequestFn>();
 const dev = process.env.NODE_ENV !== "production";
 
 // cashu-ts's own request function. It is not exported, so take it from a Mint
@@ -181,7 +184,9 @@ export function getWallet(mintUrl: string): Promise<Wallet> {
     // The URL cashu-ts gets is the mint's full URL, path kept, no trailing slash.
     if (!url || url.endsWith("/")) throw new Error(`Bad mint URL: ${mintUrl}`);
     const request = defaultRequest();
-    const mint = new Mint(url, request ? { customRequest: mintRequest(url, request) } : undefined);
+    const custom = request ? mintRequest(url, request) : undefined;
+    if (custom) requests.set(url, custom);
+    const mint = new Mint(url, custom ? { customRequest: custom } : undefined);
     if (mint.mintUrl !== url) console.warn(`[cocoa] cashu-ts changed the mint URL: ${url} -> ${mint.mintUrl}`);
     if (dev) console.debug(`[cocoa] new Wallet(${mint.mintUrl}).loadMint()`);
     const wallet = new Wallet(mint, { unit: "sat" });
@@ -190,6 +195,21 @@ export function getWallet(mintUrl: string): Promise<Wallet> {
     wallets.set(url, w);
   }
   return w;
+}
+
+/**
+ * The mint's own request function (same queue, timeouts and URL handling), with
+ * `patch` applied to the JSON reply before cashu-ts parses it. Undefined when
+ * this cashu-ts version does not expose its request function: the caller then
+ * gets cashu-ts's default.
+ */
+export function patchedMintRequest(mintUrl: string, patch: (res: Record<string, unknown>) => Record<string, unknown>): RequestFn | undefined {
+  const request = requests.get(normalizeMint(mintUrl));
+  if (!request) return undefined;
+  return (async (args: Parameters<RequestFn>[0]) => {
+    const res = await request(args);
+    return res && typeof res === "object" && !Array.isArray(res) ? patch(res as Record<string, unknown>) : res;
+  }) as RequestFn;
 }
 
 /**
