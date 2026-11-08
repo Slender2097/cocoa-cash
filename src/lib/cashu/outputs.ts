@@ -80,6 +80,12 @@ const lanes = new Map<string, Promise<void>>();
 const GET_RETRY_MS = [400, 1_200];
 const QUICK_FAIL_MS = 10_000;
 
+// A GET is aborted after GET_TIMEOUT_MS instead of cashu-ts's default of 300 s,
+// so a mint that never answers (a TLS handshake that stalls, for example) shows
+// its error within seconds. GETs only fetch small JSON (info, keys, quote
+// state). POSTs keep cashu-ts's timeout, since a melt can wait on Lightning.
+const GET_TIMEOUT_MS = 20_000;
+
 const pause = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
 
 /** Resolves when `p` settles or after `ms`, whichever comes first. */
@@ -112,6 +118,7 @@ const lostInTransit = (e: unknown): e is NetworkError =>
  *   browser adds no Cache-Control / Pragma request headers to them. Mints send
  *   no caching headers (no Cache-Control, Expires, ETag or Last-Modified), so
  *   the browser still fetches every GET fresh.
+ * - A GET waits at most GET_TIMEOUT_MS per try (see above).
  */
 function mintRequest(base: string, request: RequestFn): RequestFn {
   const prefix = base + "/";
@@ -125,6 +132,14 @@ function mintRequest(base: string, request: RequestFn): RequestFn {
       console.warn(`[cocoa] mint request outside ${base}: ${args.endpoint} -> ${endpoint}`);
     }
     const get = !args.requestBody && (!args.method || args.method.toUpperCase() === "GET");
+    const req = get
+      ? {
+          ...args,
+          endpoint,
+          requestTimeout: Math.min(args.requestTimeout ?? GET_TIMEOUT_MS, GET_TIMEOUT_MS),
+          ...(plainGets ? { cache: "default" as const } : {}),
+        }
+      : { ...args, endpoint };
 
     const before = lanes.get(base) ?? Promise.resolve();
     const run = (async () => {
@@ -132,7 +147,7 @@ function mintRequest(base: string, request: RequestFn): RequestFn {
       for (let tries = 1; ; tries++) {
         const sent = Date.now();
         try {
-          return await request(get && plainGets ? { ...args, endpoint, cache: "default" } : { ...args, endpoint });
+          return await request(req);
         } catch (e) {
           if (!lostInTransit(e)) throw e;
           const quick = Date.now() - sent < QUICK_FAIL_MS;
