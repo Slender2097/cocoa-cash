@@ -137,7 +137,7 @@ export default function useCashu(): UseCashu {
     if (!hydrated) return;
     let stopped = false;
     let running = false;
-    let lastConnect = 0;
+    let lastConnect = Date.now(); // the connect on load (above) counts as the first try
     const tick = async () => {
       if (stopped || running) return;
       // The last mint did not connect on load: try again now and then, so its operations can resume.
