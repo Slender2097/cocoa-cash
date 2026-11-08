@@ -48,6 +48,8 @@ export function deserializeOutputs(list: SerializedOutput[] = []): OutputData[] 
 }
 
 const wallets = new Map<string, Promise<Wallet>>();
+// Mints whose Wallet has finished loading (info, keysets and keys in memory).
+const loaded = new Set<string>();
 // The request function each mint's Wallet uses (see mintRequest below), so a
 // single call can reuse it with a patched reply (patchedMintRequest).
 const requests = new Map<string, RequestFn>();
@@ -86,8 +88,41 @@ const QUICK_FAIL_MS = 10_000;
 // A GET is aborted after GET_TIMEOUT_MS instead of cashu-ts's default of 300 s,
 // so a mint that never answers (a TLS handshake that stalls, for example) shows
 // its error within seconds. GETs only fetch small JSON (info, keys, quote
-// state). POSTs keep cashu-ts's timeout, since a melt can wait on Lightning.
+// state). POSTs keep cashu-ts's timeout, except a melt (MELT_WAIT_MS below).
 const GET_TIMEOUT_MS = 20_000;
+
+// A melt (POST /v1/melt/bolt11) waits on Lightning, so it gets longer than a
+// GET. But cashu-ts allows 300 s per try, and on a mint with NUT-19 a try that
+// times out is sent again, up to 9 more times: a melt that stalled kept the page
+// on "Paying..." for 5 minutes or more. After MELT_WAIT_MS in all, retries
+// included, this tab stops waiting. The journal keeps the inputs reserved and
+// settles the melt from the mint's quote state (NUT-05), with the change from
+// NUT-08 or NUT-09. It refunds only once the mint says the quote is UNPAID and
+// NUT-07 says the inputs are unspent.
+const MELT_WAIT_MS = 45_000;
+const isMelt = (endpoint: string, method?: string) =>
+  method?.toUpperCase() === "POST" && /\/v1\/melt\/[a-z0-9_-]+$/i.test(endpoint);
+
+/** An AbortSignal that fires after `ms`, or as soon as `upstream` fires. */
+function deadline(upstream: AbortSignal | null | undefined, ms: number) {
+  const ctl = new AbortController();
+  let expired = false;
+  const timer = setTimeout(() => {
+    expired = true;
+    ctl.abort();
+  }, ms);
+  const onAbort = () => ctl.abort();
+  if (upstream?.aborted) ctl.abort();
+  else upstream?.addEventListener("abort", onAbort, { once: true });
+  return {
+    signal: ctl.signal,
+    expired: () => expired,
+    clear: () => {
+      clearTimeout(timer);
+      upstream?.removeEventListener("abort", onAbort);
+    },
+  };
+}
 
 const pause = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
 
@@ -121,7 +156,8 @@ const lostInTransit = (e: unknown): e is NetworkError =>
  *   browser adds no Cache-Control / Pragma request headers to them. Mints send
  *   no caching headers (no Cache-Control, Expires, ETag or Last-Modified), so
  *   the browser still fetches every GET fresh.
- * - A GET waits at most GET_TIMEOUT_MS per try (see above).
+ * - A GET waits at most GET_TIMEOUT_MS per try, and a melt MELT_WAIT_MS in
+ *   all (see above).
  */
 function mintRequest(base: string, request: RequestFn): RequestFn {
   const prefix = base + "/";
@@ -143,25 +179,36 @@ function mintRequest(base: string, request: RequestFn): RequestFn {
           ...(plainGets ? { cache: "default" as const } : {}),
         }
       : { ...args, endpoint };
+    const melt = isMelt(endpoint, args.method);
 
     const before = lanes.get(base) ?? Promise.resolve();
     const run = (async () => {
       await settledOrAfter(before, LANE_WAIT_MS);
-      for (let tries = 1; ; tries++) {
-        const sent = Date.now();
-        try {
-          return await request(req);
-        } catch (e) {
-          if (!lostInTransit(e)) throw e;
-          const quick = Date.now() - sent < QUICK_FAIL_MS;
-          if (get && quick && tries <= GET_RETRY_MS.length && !args.signal?.aborted) {
-            if (dev) console.debug(`[cocoa] ${endpoint}: ${e.message}; trying again`);
-            await pause(GET_RETRY_MS[tries - 1]);
-            continue;
+      // A melt's limit starts when it is sent, not while it waits in the lane.
+      const limit = melt ? deadline(args.signal, MELT_WAIT_MS) : null;
+      const send = limit ? { ...req, signal: limit.signal } : req;
+      try {
+        for (let tries = 1; ; tries++) {
+          const sent = Date.now();
+          try {
+            return await request(send);
+          } catch (e) {
+            if (limit?.expired()) {
+              throw new NetworkError(`No answer from the mint within ${MELT_WAIT_MS / 1000} s at ${endpoint}`, { cause: e });
+            }
+            if (!lostInTransit(e)) throw e;
+            const quick = Date.now() - sent < QUICK_FAIL_MS;
+            if (get && quick && tries <= GET_RETRY_MS.length && !args.signal?.aborted) {
+              if (dev) console.debug(`[cocoa] ${endpoint}: ${e.message}; trying again`);
+              await pause(GET_RETRY_MS[tries - 1]);
+              continue;
+            }
+            const what = e.message.replace(/ at https?:\/\/\S+$/, "");
+            throw new NetworkError(`${what} at ${endpoint}${tries > 1 ? ` (tried ${tries} times)` : ""}`, { cause: e });
           }
-          const what = e.message.replace(/ at https?:\/\/\S+$/, "");
-          throw new NetworkError(`${what} at ${endpoint}${tries > 1 ? ` (tried ${tries} times)` : ""}`, { cause: e });
         }
+      } finally {
+        limit?.clear();
       }
     })();
     const done = run.then(
@@ -190,12 +237,18 @@ export function getWallet(mintUrl: string): Promise<Wallet> {
     if (mint.mintUrl !== url) console.warn(`[cocoa] cashu-ts changed the mint URL: ${url} -> ${mint.mintUrl}`);
     if (dev) console.debug(`[cocoa] new Wallet(${mint.mintUrl}).loadMint()`);
     const wallet = new Wallet(mint, { unit: "sat" });
-    w = wallet.loadMint().then(() => wallet);
+    w = wallet.loadMint().then(() => {
+      loaded.add(url);
+      return wallet;
+    });
     w.catch(() => wallets.delete(url));
     wallets.set(url, w);
   }
   return w;
 }
+
+/** True once this mint's Wallet has loaded. Never waits and sends nothing. */
+export const walletLoaded = (mintUrl: string): boolean => loaded.has(normalizeMint(mintUrl));
 
 /**
  * The mint's own request function (same queue, timeouts and URL handling), with
