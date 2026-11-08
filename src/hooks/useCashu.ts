@@ -115,10 +115,16 @@ export default function useCashu(): UseCashu {
   );
 
   // Reconnect the last mint on load, so unfinished operations get recovered.
+  // The last mint shows as active at once: loading its info and keys takes a
+  // few serialized GETs (seconds on a phone), and the balance is already known
+  // from the proofs on disk. Every action awaits that same load (getWallet
+  // caches the promise), so nothing reaches the mint before it is ready. If
+  // the load fails, the mint shows as not connected and is retried below.
   const autoConnected = useRef(false);
   useEffect(() => {
     if (!hydrated || autoConnected.current || !activeMint) return;
     autoConnected.current = true;
+    setWalletReady(true); // optimistic until the load settles
     handleSetMint(activeMint, { silent: true });
   }, [hydrated, activeMint, handleSetMint]);
 
@@ -169,7 +175,11 @@ export default function useCashu(): UseCashu {
     kick.current = () => void tick();
     const t = setInterval(tick, 3000);
     const onVisible = () => {
-      if (document.visibilityState === "visible") void tick();
+      if (document.visibilityState !== "visible") return;
+      // Back in view: a mint that did not connect (often a request cut off
+      // while the tab was in the background) is tried again now, not in 15 s.
+      lastConnect = 0;
+      void tick();
     };
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);
