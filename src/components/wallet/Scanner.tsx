@@ -4,10 +4,12 @@
 // with no camera picker. Full-screen on phones, a large centered frame on
 // computers, with a clear Cancel. If the preferred camera fails it falls back
 // silently; only then, with several cameras, a small "Switch camera" appears.
+// Animated QRs (NUT-16 / UR parts) are collected until the token is complete.
 // MIT License
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Html5Qrcode, Html5QrcodeCameraScanConfig } from "html5-qrcode";
+import type { URDecoder } from "@gandlaf21/bc-ur";
 import { CameraBlockedError, startBestCamera, stopCamera } from "@/lib/qrCamera";
 
 const READER_ID = "qr-reader";
@@ -34,9 +36,29 @@ export default function Scanner({ onResult, onClose }: { onResult: (text: string
   const done = useRef(false);
   const [status, setStatus] = useState<"starting" | "live" | "blocked" | "none">("starting");
   const [fallback, setFallback] = useState<{ cameras: string[]; index: number } | null>(null);
+  // NUT-16 animated QR: the decoder class (loaded on demand) and the parts so far
+  const urLib = useRef<typeof URDecoder | null>(null);
+  const ur = useRef<URDecoder | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
 
-  const handle = useCallback((text: string) => {
+  const handle = useCallback((raw: string) => {
     if (done.current) return;
+    let text = raw;
+    if (/^ur:/i.test(raw.trim())) {
+      if (!urLib.current) return; // decoder still loading: wait for the next frame
+      const d = (ur.current ??= new urLib.current());
+      try {
+        d.receivePart(raw.trim().toLowerCase());
+      } catch {
+        return; // misread frame: skip it, the next one will do
+      }
+      if (!d.isComplete()) return setProgress(Math.floor(d.estimatedPercentComplete() * 100));
+      if (!d.isSuccess()) {
+        ur.current = null;
+        return setProgress(0);
+      }
+      text = d.resultUR().decodeCBOR().toString();
+    }
     done.current = true;
     stopCamera(scanner.current);
     cb.current.onResult(text.trim().replace(/^lightning:/i, ""));
@@ -46,6 +68,7 @@ export default function Scanner({ onResult, onClose }: { onResult: (text: string
   useEffect(() => {
     let cancelled = false;
     alive.current = true;
+    import("@gandlaf21/bc-ur").then((m) => (urLib.current = m.URDecoder));
     import("html5-qrcode").then(async ({ Html5Qrcode, Html5QrcodeSupportedFormats }) => {
       if (cancelled) return;
       const s = new Html5Qrcode(READER_ID, {
@@ -144,7 +167,13 @@ export default function Scanner({ onResult, onClose }: { onResult: (text: string
           className="flex flex-col items-center gap-3 px-5 pt-4 sm:px-0"
           style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }}
         >
-          {!message && <p className="text-center text-sm text-[#e8fff7]/60">Point the camera at an invoice or token</p>}
+          {!message && (
+            <p className="text-center text-sm text-[#e8fff7]/60">
+              {progress === null
+                ? "Point the camera at an invoice or token"
+                : `Hold steady, reading animated QR… ${progress}%`}
+            </p>
+          )}
           {fallback && status === "live" && (
             <button onClick={switchCamera} className="text-sm text-[#4ff4c6]/80 underline-offset-4 hover:underline">
               Switch camera

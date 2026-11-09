@@ -6,7 +6,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Sheet from "./Sheet";
-import { QrPlate } from "@/components/ui/QrPlate";
+import { QrPlate, TokenQrPlate } from "@/components/ui/QrPlate";
 import { CopyButton } from "@/components/ui/CopyButton";
 import { Check } from "@/components/ui/Check";
 import { MintWarning } from "@/components/ui/MintWarning";
@@ -249,7 +249,7 @@ export default function FlowSheet({
       {stage.k === "token" && (
         <div className="space-y-5 text-center">
           <p className="text-sm uppercase tracking-[0.3em] text-[#a3ffe0]/80">{stage.amount.toLocaleString("en-US")} sat token</p>
-          <QrPlate value={stage.token} />
+          <TokenQrPlate token={stage.token} />
           <p className="readout max-h-24 overflow-y-auto text-left">{stage.token}</p>
           <CopyButton text={stage.token} label="Copy token" primary />
           <p className="text-xs text-[#e8fff7]/45">A copy is kept in History until you no longer need it.</p>
