@@ -9,7 +9,7 @@
 // which could lose funds on a dropped reply or a closed tab.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Amount, getTokenMetadata } from "@cashu/cashu-ts";
+import { Amount, MintQuoteState, getTokenMetadata } from "@cashu/cashu-ts";
 import type { MeltQuoteBolt11Response } from "@cashu/cashu-ts";
 import useProofStorage from "./useProofStorage";
 import type { ProofStorage } from "./useProofStorage";
@@ -17,6 +17,8 @@ import { getWallet, walletLoaded, errText } from "@/lib/cashu/outputs";
 import { normalizeMint, isSavedMint, rememberMint, amountToNumber } from "@/lib/cashu/storage";
 import {
   startMint,
+  advanceMint,
+  checkMintQuoteState,
   quoteMelt,
   startMelt,
   startSend,
@@ -36,7 +38,7 @@ export type DataOutput = {
   details?: string;
   message?: string;
   success?: string;
-  type?: "mint" | "melt-quote" | "melt" | "swap-send" | "claim-check" | "swap-claim";
+  type?: "mint" | "melt-quote" | "melt" | "melt-pending" | "swap-send" | "claim-check" | "swap-claim";
   /** claim-check: the token's mint, which is not in the user's mints list. */
   mint?: string;
   amount?: number;
@@ -86,6 +88,11 @@ const meltPaid = (op: MeltOp): NonNullable<DataOutput> => ({
   changeReceived: op.change || 0,
 });
 
+// While the invoice this tab just made is unpaid, its quote state is asked for
+// this often (one GET, for that quote only), for at most FAST_POLL_FOR_MS.
+const FAST_POLL_MS = 1_000;
+const FAST_POLL_FOR_MS = 10 * 60_000;
+
 /** Start loading a mint's Wallet without waiting for it (getWallet keeps the one load in flight). */
 const loadInBackground = (mint: string) => {
   try {
@@ -108,6 +115,8 @@ export default function useCashu(): UseCashu {
   // Melts this tab stopped waiting for ("Payment pending"). The ticker below
   // says how each one ended once the journal has settled it.
   const pendingMelts = useRef(new Set<string>());
+  // The invoice this tab created last (on screen as a QR code until it is paid).
+  const shownQuote = useRef<string | null>(null);
 
   const handleSetMint = useCallback(
     async (input: string, opts: { silent?: boolean } = {}) => {
@@ -167,6 +176,12 @@ export default function useCashu(): UseCashu {
     let stopped = false;
     let running = false;
     let lastConnect = Date.now(); // the connect on load (above) counts as the first try
+    const announced = new Set<string>(); // paid invoices already reported (both loops below report)
+    const announce = (op: MintOp) => {
+      if (announced.has(op.id)) return;
+      announced.add(op.id);
+      if (!busy.current) setDataOutput({ status: "Mint successful ✓", type: "mint", amount: op.amount, receivedProofs: 1 });
+    };
     const reportMelts = () => {
       if (busy.current) return; // after the action that is running now
       for (const id of pendingMelts.current) {
@@ -210,9 +225,7 @@ export default function useCashu(): UseCashu {
           if (stopped) return;
           for (const id of watching) {
             const op = getOp(id) as MintOp | null;
-            if (op?.state === "DONE" && !busy.current) {
-              setDataOutput({ status: "Mint successful ✓", type: "mint", amount: op.amount, receivedProofs: 1 });
-            }
+            if (op?.state === "DONE") announce(op);
           }
         } finally {
           running = false;
@@ -220,14 +233,39 @@ export default function useCashu(): UseCashu {
       }
       reportMelts();
     };
+    // The invoice on screen: while the mint says UNPAID, ask for its state
+    // every second and claim it as soon as the mint says PAID, without waiting
+    // for the round above. Stops once the quote is ISSUING, DONE or old.
+    let checking = false;
+    const watchQuote = async () => {
+      const op = shownQuote.current ? (getOp(shownQuote.current) as MintOp | null) : null;
+      if (!op || op.kind !== "mint" || op.state !== "UNPAID" || Date.now() > Math.min(op.expiry ?? Infinity, op.createdAt + FAST_POLL_FOR_MS)) {
+        shownQuote.current = null;
+        return;
+      }
+      if (stopped || checking || !walletLoaded(op.mint)) return;
+      checking = true;
+      try {
+        const state = await checkMintQuoteState(await getWallet(op.mint), op.mint, op.id, op.amount);
+        if (stopped || state === MintQuoteState.UNPAID) return;
+        const done = await advanceMint(op.id); // the journal's own claim; waits for the wallet lock
+        if (done.state === "DONE") announce(done);
+      } catch {
+        // no answer this time: try again in a second (the round above keeps going too)
+      } finally {
+        checking = false;
+      }
+    };
     kick.current = () => void tick();
     const t = setInterval(tick, 3000);
+    const fast = setInterval(watchQuote, FAST_POLL_MS);
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;
       // Back in view: a mint that did not connect (often a request cut off
       // while the tab was in the background) is tried again now, not in 15 s.
       lastConnect = 0;
       void tick();
+      void watchQuote();
     };
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);
@@ -237,6 +275,7 @@ export default function useCashu(): UseCashu {
       stopped = true;
       kick.current = () => {};
       clearInterval(t);
+      clearInterval(fast);
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
       window.removeEventListener("online", onVisible);
@@ -258,6 +297,7 @@ export default function useCashu(): UseCashu {
     setIsProcessing(true);
     try {
       const op = await startMint(activeMint, amount); // NUT-04 quote, journaled first
+      shownQuote.current = op.id; // polled every second until paid (see watchQuote)
       setDataOutput({ status: "Invoice created", invoice: op.invoice, quoteId: op.id });
       setTimeout(() => kick.current(), 1500); // start polling the new quote without waiting for the next tick
     } catch (err) {
@@ -307,8 +347,11 @@ export default function useCashu(): UseCashu {
         setDataOutput({ error: "Melt failed", details: op.error || "The mint could not pay the invoice. Your sats are back." });
       } else {
         pendingMelts.current.add(op.id); // the ticker reports how it ends
+        // Not an error: the journal holds the inputs and settles the melt.
         setDataOutput({
-          error: "Payment pending",
+          status: "Payment pending",
+          type: "melt-pending",
+          amount: op.amount,
           details: "The mint is still paying. The sats stay reserved and this wallet will finish or refund it automatically.",
         });
       }

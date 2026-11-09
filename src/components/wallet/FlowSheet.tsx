@@ -22,6 +22,7 @@ type Stage =
   | { k: "confirm-claim"; token: string; mint: string; amount: number; trusted: boolean }
   | { k: "token"; token: string; amount: number }
   | { k: "done"; title: string; lines: string[] }
+  | { k: "pending"; title: string; detail: string }
   | { k: "error"; title: string; detail: string };
 
 const TITLES: Record<FlowType, string> = {
@@ -73,6 +74,8 @@ export default function FlowSheet({
       setStage({ k: "confirm-claim", token: d.token, mint: d.mint, amount: d.amount ?? 0, trusted: false });
     } else if (type === "mint" && d.type === "mint") {
       setStage({ k: "done", title: "Sats received", lines: [`+${d.amount ?? ""} sat`] });
+    } else if (type === "melt" && d.type === "melt-pending") {
+      setStage({ k: "pending", title: d.status || "Payment pending", detail: d.details || "" });
     } else if (type === "melt" && d.type === "melt") {
       const lines = [`Paid ${d.amount} sat`, `Fee reserve ${d.feeReserve ?? 0} sat`];
       if (d.changeReceived) lines.push(`Change returned ${d.changeReceived} sat`);
@@ -264,6 +267,17 @@ export default function FlowSheet({
           </div>
           <button className="btn-neon" onClick={onClose}>
             Done
+          </button>
+        </div>
+      )}
+
+      {stage.k === "pending" && (
+        <div className="space-y-5 py-4 text-center" data-testid="flow-pending">
+          <Check tone="wait" />
+          <p className="text-xl text-[#e8fff7]">{stage.title}</p>
+          {stage.detail && <p className="text-sm text-[#e8fff7]/60">{stage.detail}</p>}
+          <button className="btn-ghost w-full" onClick={onClose}>
+            Close
           </button>
         </div>
       )}

@@ -81,7 +81,7 @@ export default function Home() {
   // The core keeps pulsing under a panel while an action runs; the rest does not need to.
   const backdropStill = dormant || coverSettled;
   const coreStill = dormant || (coverSettled && !isProcessing);
-  const [toast, setToast] = useState<{ text: string; tone: "ok" | "error" } | null>(null);
+  const [toast, setToast] = useState<{ text: string; tone: "ok" | "error" | "info" } | null>(null);
   const [transactions, setTransactions] = useState<Tx[]>([]);
 
   const close = useCallback(() => setPanel(null), []);
@@ -103,11 +103,12 @@ export default function Home() {
   const flowOpen = panel?.k === "flow";
   useEffect(() => {
     if (!dataOutput || flowOpen) return;
-    let next: { text: string; tone: "ok" | "error" } | null = null;
+    let next: { text: string; tone: "ok" | "error" | "info" } | null = null;
     if (dataOutput.error) next = { text: `${dataOutput.error}${dataOutput.details ? `: ${dataOutput.details}` : ""}`, tone: "error" };
     else if (dataOutput.status?.includes("Mint connected")) next = { text: `Connected to ${mintLabel(activeMint)}`, tone: "ok" };
     else if (dataOutput.type === "mint") next = { text: `+${dataOutput.amount} sat received`, tone: "ok" };
     else if (dataOutput.type === "melt") next = { text: `Paid ${dataOutput.amount} sat`, tone: "ok" };
+    else if (dataOutput.type === "melt-pending") next = { text: `Payment pending: ${dataOutput.details}`, tone: "info" };
     if (!next) return;
     setToast(next); // eslint-disable-line react-hooks/set-state-in-effect -- mirrors the hook's latest result
     const t = setTimeout(() => setToast(null), 4000);
@@ -207,7 +208,7 @@ export default function Home() {
       {toast && (
         <div className="anim-rise pointer-events-none fixed inset-x-0 top-[calc(max(1rem,env(safe-area-inset-top))+4.5rem)] z-[80] flex justify-center px-4">
           <p
-            className={`glass max-w-md rounded-full px-5 py-3 text-sm ${toast.tone === "error" ? "text-red-200" : "text-[#a3ffe0]"}`}
+            className={`glass max-w-md rounded-full px-5 py-3 text-sm ${toast.tone === "error" ? "text-red-200" : toast.tone === "info" ? "text-[#e8fff7]" : "text-[#a3ffe0]"}`}
             role="status"
           >
             {toast.text}
