@@ -88,7 +88,7 @@ const QUICK_FAIL_MS = 10_000;
 // A GET is aborted after GET_TIMEOUT_MS instead of cashu-ts's default of 300 s,
 // so a mint that never answers (a TLS handshake that stalls, for example) shows
 // its error within seconds. GETs only fetch small JSON (info, keys, quote
-// state). POSTs keep cashu-ts's timeout, except a melt (MELT_WAIT_MS below).
+// state). POSTs keep cashu-ts's timeout, except a melt and a mint quote (below).
 const GET_TIMEOUT_MS = 20_000;
 
 // A melt (POST /v1/melt/bolt11) waits on Lightning, so it gets longer than a
@@ -102,6 +102,15 @@ const GET_TIMEOUT_MS = 20_000;
 const MELT_WAIT_MS = 45_000;
 const isMelt = (endpoint: string, method?: string) =>
   method?.toUpperCase() === "POST" && /\/v1\/melt\/[a-z0-9_-]+$/i.test(endpoint);
+
+// Creating a mint quote (POST /v1/mint/quote/bolt11) only asks the mint for an
+// invoice, but it kept cashu-ts's 300 s timeout, so "Create invoice" could spin
+// for minutes on a stalled mint. Like a melt, it is aborted after
+// MINT_QUOTE_WAIT_MS in all, retries included. Nothing is journaled until the
+// quote arrives, so there is nothing to recover.
+const MINT_QUOTE_WAIT_MS = 30_000;
+const isMintQuote = (endpoint: string, method?: string) =>
+  method?.toUpperCase() === "POST" && /\/v1\/mint\/quote\/[a-z0-9_-]+$/i.test(endpoint);
 
 /** An AbortSignal that fires after `ms`, or as soon as `upstream` fires. */
 function deadline(upstream: AbortSignal | null | undefined, ms: number) {
@@ -156,8 +165,8 @@ const lostInTransit = (e: unknown): e is NetworkError =>
  *   browser adds no Cache-Control / Pragma request headers to them. Mints send
  *   no caching headers (no Cache-Control, Expires, ETag or Last-Modified), so
  *   the browser still fetches every GET fresh.
- * - A GET waits at most GET_TIMEOUT_MS per try, and a melt MELT_WAIT_MS in
- *   all (see above).
+ * - A GET waits at most GET_TIMEOUT_MS per try, a melt MELT_WAIT_MS in all,
+ *   and a mint quote MINT_QUOTE_WAIT_MS in all (see above).
  */
 function mintRequest(base: string, request: RequestFn): RequestFn {
   const prefix = base + "/";
@@ -180,12 +189,13 @@ function mintRequest(base: string, request: RequestFn): RequestFn {
         }
       : { ...args, endpoint };
     const melt = isMelt(endpoint, args.method);
+    const waitMs = melt ? MELT_WAIT_MS : isMintQuote(endpoint, args.method) ? MINT_QUOTE_WAIT_MS : 0;
 
     const before = lanes.get(base) ?? Promise.resolve();
     const run = (async () => {
       await settledOrAfter(before, LANE_WAIT_MS);
-      // A melt's limit starts when it is sent, not while it waits in the lane.
-      const limit = melt ? deadline(args.signal, MELT_WAIT_MS) : null;
+      // The limit starts when the request is sent, not while it waits in the lane.
+      const limit = waitMs ? deadline(args.signal, waitMs) : null;
       const send = limit ? { ...req, signal: limit.signal } : req;
       try {
         for (let tries = 1; ; tries++) {
@@ -194,7 +204,7 @@ function mintRequest(base: string, request: RequestFn): RequestFn {
             return await request(send);
           } catch (e) {
             if (limit?.expired()) {
-              throw new NetworkError(`No answer from the mint within ${MELT_WAIT_MS / 1000} s at ${endpoint}`, { cause: e });
+              throw new NetworkError(`No answer from the mint within ${waitMs / 1000} s at ${endpoint}`, { cause: e });
             }
             if (!lostInTransit(e)) throw e;
             const quick = Date.now() - sent < QUICK_FAIL_MS;
