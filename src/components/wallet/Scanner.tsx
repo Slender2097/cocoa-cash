@@ -36,7 +36,7 @@ export default function Scanner({ onResult, onClose }: { onResult: (text: string
   const done = useRef(false);
   const [status, setStatus] = useState<"starting" | "live" | "blocked" | "none">("starting");
   const [fallback, setFallback] = useState<{ cameras: string[]; index: number } | null>(null);
-  // NUT-16 animated QR: the decoder class (loaded with the camera) and the parts so far
+  // NUT-16 animated QR: the decoder class (loaded on demand) and the parts so far
   const urLib = useRef<typeof URDecoder | null>(null);
   const ur = useRef<URDecoder | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
