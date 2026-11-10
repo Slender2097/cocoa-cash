@@ -1,8 +1,7 @@
 // src/components/wallet/GlyphIcons.tsx
 // The header glyphs as one family of neon line icons: the palenque hut
 // (mints), the glyph clock (history), the guardian with spear and shield
-// (seed vault), the heart with a bolt (tip board) and the stone doorway
-// (the way out to Lightning).
+// (seed vault) and the stone doorway (the way out to Lightning).
 // MIT License
 //
 // Every glyph is drawn on the same 32×32 grid with the same 1.4 stroke and
@@ -12,7 +11,7 @@
 
 import React from "react";
 
-export type GlyphName = "mints" | "history" | "vault" | "tips" | "lightning";
+export type GlyphName = "mints" | "history" | "vault" | "lightning";
 
 const GLYPHS: Record<GlyphName, React.ReactNode> = {
   // Hut: conical roof flaring past the walls, one ring on the roof, arched door.
@@ -41,13 +40,6 @@ const GLYPHS: Record<GlyphName, React.ReactNode> = {
       <path d="M16.6 16.2H12.6L15.4 22L12.9 28.4M15.4 22L17.9 28.4M12.6 16.2L7.9 19.6" />
       <circle cx="22" cy="19.8" r="4.6" />
       <circle cx="22" cy="19.8" r="1.5" />
-    </>
-  ),
-  // Heart with a lightning bolt.
-  tips: (
-    <>
-      <path d="M16 26C16 26 5.2 20.2 5.2 12.9C5.2 9.4 7.8 6.9 11 6.9C13.1 6.9 14.9 8 16 9.9C17.1 8 18.9 6.9 21 6.9C24.2 6.9 26.8 9.4 26.8 12.9C26.8 20.2 16 26 16 26Z" />
-      <path d="M17.3 11.8L13.9 17.2H18.1L14.7 22" />
     </>
   ),
   // Doorway: a corbel arch (jambs, stepped-in sides, a flat capstone) with its

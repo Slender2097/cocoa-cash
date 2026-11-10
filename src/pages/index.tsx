@@ -16,7 +16,7 @@ import Cosmos from "@/components/wallet/Cosmos";
 import BalanceCore from "@/components/wallet/BalanceCore";
 import Orbs from "@/components/wallet/Orbs";
 import type { FlowType } from "@/components/wallet/Orbs";
-import { Glyph, TipsGlyph } from "@/components/wallet/HeaderGlyphs";
+import { Glyph } from "@/components/wallet/HeaderGlyphs";
 import FlowSheet from "@/components/wallet/FlowSheet";
 import LightningSheet from "@/components/wallet/LightningSheet";
 import MintsPanel from "@/components/wallet/MintsPanel";
@@ -177,15 +177,14 @@ export default function Home() {
             <Image src="/jaguar-logo.png" alt="cocoa.cash" width={80} height={60} className="h-14 w-auto drop-shadow-[0_0_14px_rgba(79,244,198,0.7)]" priority />
             <span className="hidden text-lg font-light tracking-[0.2em] text-[#e8fff7]/80 sm:inline">cocoa</span>
           </button>
-          {/* five circles: on a narrow phone they all shrink together (to 44px at 360px wide) so the row still fits */}
-          <div className="flex items-center gap-1.5 sm:gap-2" style={{ "--glyph": "clamp(44px, calc((100vw - 144px) / 5), 52px)" } as CSSProperties}>
+          {/* four circles: on a narrow phone they all shrink together (to 44px at 360px wide) so the row still fits */}
+          <div className="flex items-center gap-1.5 sm:gap-2" style={{ "--glyph": "clamp(44px, calc((100vw - 144px) / 4), 52px)" } as CSSProperties}>
             <Glyph name="mints" label="Mints" onClick={() => setPanel({ k: "mints" })} />
             <Glyph name="history" label="History" onClick={() => setPanel({ k: "history" })} />
             <span className="relative">
               <Glyph name="vault" label="Seed vault" onClick={() => setPanel({ k: "vault" })} />
               {securityLevel < 2 && <span className="pointer-events-none absolute right-0 top-0 h-2.5 w-2.5 rounded-full bg-amber-300 shadow-[0_0_8px_#fcd34d]" />}
             </span>
-            <TipsGlyph />
             <Glyph name="lightning" label="Lightning in / out" onClick={() => setPanel({ k: "lightning" })} />
           </div>
         </header>

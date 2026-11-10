@@ -3,7 +3,6 @@
 // MIT License
 
 import type { CSSProperties } from "react";
-import Link from "next/link";
 import { GlyphIcon, type GlyphName } from "./GlyphIcons";
 
 // Every header circle is the same size: 52px, or the `--glyph` length the
@@ -28,12 +27,3 @@ const GLYPH_CLS =
 // drawn in span about 57% of the circle: at 52px every stroke stays 8px or
 // more clear of the frame.
 const glyphSize = (size?: number) => (size ? Math.round(size * 0.7) : "70%");
-
-/** Header link to the tip board (/creator), drawn in the same glyph family. */
-export function TipsGlyph({ size }: { size?: number }) {
-  return (
-    <Link href="/creator" aria-label="Tip board" title="Tip board" className={GLYPH_CLS} style={box(size)}>
-      <GlyphIcon name="tips" size={glyphSize(size)} />
-    </Link>
-  );
-}
