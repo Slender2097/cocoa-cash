@@ -11,6 +11,7 @@
 import { Amount, CallerAbortError, Mint, NetworkError, OutputData, UncancellableReadError, Wallet } from "@cashu/cashu-ts";
 import type { OutputDataLike, Proof, RequestFn, SerializedBlindedMessage } from "@cashu/cashu-ts";
 import { normalizeMint } from "./storage";
+import { counterSource, currentSeed } from "./seed";
 
 export type SerializedOutput = {
   B: { amount: number; B_: string; id: string };
@@ -47,8 +48,9 @@ export function deserializeOutputs(list: SerializedOutput[] = []): OutputData[] 
   );
 }
 
+// Keyed by phrase + mint URL (walletKey), so a phrase change gets a new Wallet.
 const wallets = new Map<string, Promise<Wallet>>();
-// Mints whose Wallet has finished loading (info, keysets and keys in memory).
+// Wallets that have finished loading (info, keysets and keys in memory).
 const loaded = new Set<string>();
 // The request function each mint's Wallet uses (see mintRequest below), so a
 // single call can reuse it with a patched reply (patchedMintRequest).
@@ -233,32 +235,43 @@ function mintRequest(base: string, request: RequestFn): RequestFn {
   }) as RequestFn;
 }
 
-/** One loaded Wallet per mint URL (sat unit). */
+const walletKey = (url: string) => `${currentSeed().fp}|${url}`;
+
+/**
+ * One loaded Wallet per mint URL (sat unit) and phrase. Deterministic secrets
+ * (NUT-13): the Wallet gets the phrase's BIP39 seed and a counter source that
+ * saves each reservation to localStorage (./seed.ts). Proofs with random
+ * secrets from before this still spend: spending never looks at the seed.
+ */
 export function getWallet(mintUrl: string): Promise<Wallet> {
   const url = normalizeMint(mintUrl);
-  let w = wallets.get(url);
+  // The phrase is read (and created if missing) before the Wallet exists.
+  const { seed, fp } = currentSeed();
+  const key = `${fp}|${url}`;
+  let w = wallets.get(key);
   if (!w) {
     // The URL cashu-ts gets is the mint's full URL, path kept, no trailing slash.
     if (!url || url.endsWith("/")) throw new Error(`Bad mint URL: ${mintUrl}`);
-    const request = defaultRequest();
-    const custom = request ? mintRequest(url, request) : undefined;
-    if (custom) requests.set(url, custom);
-    const mint = new Mint(url, custom ? { customRequest: custom } : undefined);
+    // One request function per mint URL, shared by its Wallets (one queue per mint).
+    let request = requests.get(url);
+    const lib = request ? null : defaultRequest();
+    if (lib) requests.set(url, (request = mintRequest(url, lib)));
+    const mint = new Mint(url, request ? { customRequest: request } : undefined);
     if (mint.mintUrl !== url) console.warn(`[cocoa] cashu-ts changed the mint URL: ${url} -> ${mint.mintUrl}`);
     if (dev) console.debug(`[cocoa] new Wallet(${mint.mintUrl}).loadMint()`);
-    const wallet = new Wallet(mint, { unit: "sat" });
+    const wallet = new Wallet(mint, { unit: "sat", bip39seed: seed, counterSource: counterSource(url, fp) });
     w = wallet.loadMint().then(() => {
-      loaded.add(url);
+      loaded.add(key);
       return wallet;
     });
-    w.catch(() => wallets.delete(url));
-    wallets.set(url, w);
+    w.catch(() => wallets.delete(key));
+    wallets.set(key, w);
   }
   return w;
 }
 
 /** True once this mint's Wallet has loaded. Never waits and sends nothing. */
-export const walletLoaded = (mintUrl: string): boolean => loaded.has(normalizeMint(mintUrl));
+export const walletLoaded = (mintUrl: string): boolean => loaded.has(walletKey(normalizeMint(mintUrl)));
 
 /**
  * The mint's own request function (same queue, timeouts and URL handling), with
