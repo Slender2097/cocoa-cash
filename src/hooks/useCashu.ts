@@ -134,12 +134,7 @@ export default function useCashu(): UseCashu {
       } catch (error) {
         setWalletReady(false);
         if (!opts.silent) {
-          // A wrong path (often just the wrong letter case) answers with a 4xx.
-          const hasPath = /^https?:\/\/[^/]+\/./i.test(url);
-          const hint = hasPath ? " Check the URL: the part after the domain is case-sensitive." : "";
-          // Name the mint's full URL, unless the error already names a URL under it.
-          const text = errText(error);
-          setDataOutput({ error: "Connection failed", details: `${text.includes(url) ? text : `${text} (${url})`}${hint}` });
+          setDataOutput({ error: "Could not reach the mint", details: "Try again, or switch mint." });
         }
       }
     },
@@ -193,7 +188,7 @@ export default function useCashu(): UseCashu {
         if (op.state !== "DONE" && op.state !== "FAILED") continue;
         pendingMelts.current.delete(id);
         setDataOutput(
-          op.state === "DONE" ? meltPaid(op) : { error: "Melt failed", details: "The mint could not pay the invoice. Your sats are back." }
+          op.state === "DONE" ? meltPaid(op) : { error: "Could not pay", details: "The mint could not pay the invoice. Your sats are back." }
         );
       }
     };
@@ -301,7 +296,7 @@ export default function useCashu(): UseCashu {
       setDataOutput({ status: "Invoice created", invoice: op.invoice, quoteId: op.id });
       setTimeout(() => kick.current(), 1500); // start polling the new quote without waiting for the next tick
     } catch (err) {
-      setDataOutput({ error: "Failed to create invoice", details: errText(err) });
+      setDataOutput({ error: "Could not create the invoice", details: "Try again." });
     } finally {
       setIsProcessing(false);
     }
@@ -334,7 +329,7 @@ export default function useCashu(): UseCashu {
 
   const handleMelt = async (quoteId: string) => {
     const confirmed = meltQuotes.current.get(quoteId);
-    if (!confirmed) return setDataOutput({ error: "Melt failed", details: "This quote is no longer available. Paste the invoice again." });
+    if (!confirmed) return setDataOutput({ error: "Could not pay", details: "Try again." });
     if (!guard()) return;
     setIsProcessing(true);
     try {
@@ -344,7 +339,7 @@ export default function useCashu(): UseCashu {
       if (op.state === "DONE") {
         setDataOutput({ ...meltPaid(op), estimatedNewBalance: balance - op.amount - op.feeReserve + (op.change || 0) });
       } else if (op.state === "FAILED") {
-        setDataOutput({ error: "Melt failed", details: op.error || "The mint could not pay the invoice. Your sats are back." });
+        setDataOutput({ error: "Could not pay", details: "The mint could not pay the invoice. Your sats are back." });
       } else {
         pendingMelts.current.add(op.id); // the ticker reports how it ends
         // Not an error: the journal holds the inputs and settles the melt.
@@ -356,7 +351,7 @@ export default function useCashu(): UseCashu {
         });
       }
     } catch (err) {
-      setDataOutput({ error: "Melt failed", details: errText(err) });
+      setDataOutput({ error: "Could not pay", details: "Try again." });
     } finally {
       setIsProcessing(false);
     }
@@ -380,7 +375,7 @@ export default function useCashu(): UseCashu {
         message: "Copy this token and send it to the receiver. It is also saved in History.",
       });
     } catch (err) {
-      setDataOutput({ error: "Swap Send failed", message: errText(err) });
+      setDataOutput({ error: "Could not create the token", details: "Try again." });
     } finally {
       setIsProcessing(false);
     }
@@ -395,7 +390,7 @@ export default function useCashu(): UseCashu {
       try {
         meta = getTokenMetadata(token);
       } catch (error) {
-        return setDataOutput({ error: "Claim failed", message: errText(error) });
+        return setDataOutput({ error: "Could not receive", details: "Try again, or paste the token." });
       }
       if (!isSavedMint(meta.mint)) {
         return setDataOutput({
@@ -424,7 +419,7 @@ export default function useCashu(): UseCashu {
         message: `Added ${op.amount} sat to your balance`,
       });
     } catch (error) {
-      setDataOutput({ error: "Claim failed", message: errText(error) });
+      setDataOutput({ error: "Could not receive", details: "Try again, or paste the token." });
     } finally {
       setIsProcessing(false);
     }
