@@ -177,7 +177,7 @@ export default function Home() {
             <Image src="/jaguar-logo.png" alt="cocoa.cash" width={80} height={60} className="h-14 w-auto drop-shadow-[0_0_14px_rgba(79,244,198,0.7)]" priority />
             <span className="hidden text-lg font-light tracking-[0.2em] text-[#e8fff7]/80 sm:inline">cocoa</span>
           </button>
-          {/* four circles: on a narrow phone they all shrink together (to 44px at 360px wide) so the row still fits */}
+          {/* four circles: on a narrow phone they all shrink together (to 44px at 320px wide) so the row still fits */}
           <div className="flex items-center gap-1.5 sm:gap-2" style={{ "--glyph": "clamp(44px, calc((100vw - 144px) / 4), 52px)" } as CSSProperties}>
             <Glyph name="mints" label="Mints" onClick={() => setPanel({ k: "mints" })} />
             <Glyph name="history" label="History" onClick={() => setPanel({ k: "history" })} />
