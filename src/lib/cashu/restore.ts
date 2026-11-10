@@ -8,8 +8,8 @@
 //   NUT-07: keep only the restored proofs the mint reports UNSPENT
 //   add them to the normal proof store (deduplicated by secret; nothing that
 //   is already there is removed or replaced)
-//   raise the stored counter past the last restored one, so new outputs never
-//   reuse a counter
+//   raise the stored counter past the last restored one (plus a margin when
+//   this browser had lost its counters), so new outputs never reuse a counter
 //
 // Proofs with random secrets (made before NUT-13 was added) are not touched
 // and cannot be found this way. The journal's own NUT-09 recovery of single
@@ -27,6 +27,14 @@ import { withWalletLock } from "./lock";
 
 // Counters with no signature in a row before a keyset counts as done.
 const GAP_LIMIT = 300;
+
+// When this browser's counter is behind the last one the mint signed, its
+// counters were lost (cleared browser data, new device). Counters reserved
+// after that last signature (unused NUT-08 change blanks, a request that
+// failed) are invisible to NUT-09, yet the mint may have stored their blinded
+// messages and would refuse them again. New outputs therefore start this far
+// past the last signature. The gap stays well under GAP_LIMIT.
+const LOST_COUNTER_MARGIN = 100;
 
 export type MintRestore = { mint: string; amount: number; proofs: number; error?: string };
 
@@ -90,7 +98,9 @@ async function restoreMint(mint: string, progress: (text: string) => void): Prom
       const res = await wallet.batchRestore(GAP_LIMIT, undefined, 0, ks.id); // NUT-09
       if (res.lastCounterWithSignature !== undefined) {
         // Saved before anything else is sent: new outputs start past every restored one.
-        await counters.advanceToAtLeast(ks.id, res.lastCounterWithSignature + 1);
+        const next = res.lastCounterWithSignature + 1;
+        const { start: stored } = await counters.reserve(ks.id, 0); // a peek, changes nothing
+        await counters.advanceToAtLeast(ks.id, stored < next ? next + LOST_COUNTER_MARGIN : next);
         rememberUsedMint(mint);
       }
       if (!res.proofs.length) continue;
