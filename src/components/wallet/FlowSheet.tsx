@@ -26,8 +26,8 @@ type Stage =
   | { k: "error"; title: string; detail: string };
 
 const TITLES: Record<FlowType, string> = {
-  mint: "Mint · Lightning in",
-  melt: "Melt · Pay Lightning",
+  mint: "Receive",
+  melt: "Send",
   send: "Send ecash",
   claim: "Claim ecash",
 };
