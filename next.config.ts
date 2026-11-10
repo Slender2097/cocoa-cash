@@ -1,9 +1,8 @@
 import type { NextConfig } from "next";
 
 // Security headers. The wallet keeps bearer ecash in this origin's storage, so
-// injected script must not run and wallet pages must not be framed. Mints and
-// Nostr relays are chosen by the user, so connect-src allows any https/wss
-// host. Only /tip is meant to be embedded (an iframe on creators' sites).
+// injected script must not run and wallet pages must not be framed. Mints are
+// chosen by the user, so connect-src allows any https/wss host.
 const dev = process.env.NODE_ENV !== "production";
 
 const csp = (frameAncestors: string) =>
@@ -14,7 +13,7 @@ const csp = (frameAncestors: string) =>
     "style-src 'self' 'unsafe-inline'", // styled-jsx, next/image and the QR scanner set inline styles
     "img-src 'self' data: blob:",
     "font-src 'self'",
-    `connect-src 'self' https: wss:${dev ? " http: ws:" : ""}`, // user-chosen mints and relays (dev: local mints, HMR)
+    `connect-src 'self' https: wss:${dev ? " http: ws:" : ""}`, // user-chosen mints (dev: local mints, HMR)
     "media-src 'self' blob: mediastream:", // QR scanner camera preview
     "worker-src 'self' blob:",
     "object-src 'none'",
@@ -38,13 +37,11 @@ const nextConfig: NextConfig = {
           { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=(), payment=()" },
         ],
       },
-      // Legacy anti-framing for the pages that hold or show the wallet. Not on /tip.
-      ...["/", "/creator", "/privacy", "/terms"].map((source) => ({
+      // Legacy anti-framing for the pages that hold or show the wallet.
+      ...["/", "/privacy", "/terms"].map((source) => ({
         source,
         headers: [{ key: "X-Frame-Options", value: "DENY" }],
       })),
-      // The tip widget is embedded anywhere. A later rule replaces the same header key.
-      { source: "/tip", headers: [{ key: "Content-Security-Policy", value: csp("*") }] },
     ];
   },
 };

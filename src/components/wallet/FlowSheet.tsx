@@ -219,7 +219,6 @@ export default function FlowSheet({
           <p className="text-sm text-[#e8fff7]/60">The token says {stage.amount.toLocaleString("en-US")} sat.</p>
           <MintWarning
             mints={[stage.mint]}
-            context="claim"
             trusted={stage.trusted}
             onTrust={(trusted) => setStage({ ...stage, trusted })}
           />

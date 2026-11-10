@@ -30,7 +30,7 @@
 }
 
 @layer components {
-  /* Floating holographic panel. Also used by /tip and /creator. */
+  /* Floating holographic panel. */
   .glass {
     position: relative;
     background:
@@ -43,14 +43,6 @@
       inset 0 1px 0 rgba(163, 255, 224, 0.12),
       0 30px 80px -30px rgba(0, 0, 0, 0.8),
       0 0 60px -30px rgba(79, 244, 198, 0.45);
-  }
-
-  /* Same panel on an opaque base, for the tip embed (host pages may be white). */
-  .glass-solid {
-    background:
-      linear-gradient(160deg, rgba(163, 255, 224, 0.08) 0%, rgba(163, 255, 224, 0) 35%),
-      #183029;
-    box-shadow: inset 0 1px 0 rgba(163, 255, 224, 0.12);
   }
 
   /* Big primary action. */

@@ -46,9 +46,6 @@ export default function MenuPanel({ onClose }: { onClose: () => void }) {
           <Link href="/terms" className="hover:text-[#4ff4c6]">
             Terms
           </Link>
-          <Link href="/creator" className="hover:text-[#4ff4c6]">
-            Tip board
-          </Link>
         </div>
       </div>
     </Sheet>
