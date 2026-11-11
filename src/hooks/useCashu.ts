@@ -73,6 +73,8 @@ export type UseCashu = {
   /** Claim a token. A mint not in savedMints first returns a "claim-check" result to confirm with { trustMint: true }. */
   handleSwapClaim: (token: string, opts?: { trustMint?: boolean }) => Promise<void>;
   setDataOutput: (d: DataOutput) => void;
+  /** How many receives (a Lightning mint reaching DONE, or a claim that added proofs) this tab has seen. */
+  receivedCount: number;
   /** The single proof-storage instance. Pages must use this one. */
   storage: ProofStorage;
 };
@@ -108,6 +110,7 @@ export default function useCashu(): UseCashu {
   const [walletReady, setWalletReady] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [dataOutput, setDataOutput] = useState<DataOutput>(null);
+  const [receivedCount, setReceivedCount] = useState(0);
   const busy = useRef(false);
   useEffect(() => {
     busy.current = isProcessing;
@@ -175,6 +178,7 @@ export default function useCashu(): UseCashu {
     const announce = (op: MintOp) => {
       if (announced.has(op.id)) return;
       announced.add(op.id);
+      setReceivedCount((n) => n + 1);
       if (!busy.current) setDataOutput({ status: "Mint successful ✓", type: "mint", amount: op.amount, receivedProofs: 1 });
     };
     const reportMelts = () => {
@@ -408,6 +412,7 @@ export default function useCashu(): UseCashu {
       const op = await startReceive(claimable); // NUT-03 swap; final only on success
       if (op.state === "FAILED") throw new Error(op.error || "Token could not be claimed");
       if (op.state !== "DONE") throw new Error(op.error || "The mint did not answer. The claim will be retried automatically.");
+      if (op.amount > 0) setReceivedCount((n) => n + 1);
       rememberMint(op.mint); // the user claimed from it: list it under Mints from now on
       if (normalizeMint(op.mint) !== normalizeMint(activeMint)) switchMint(op.mint);
       setDataOutput({
@@ -439,6 +444,7 @@ export default function useCashu(): UseCashu {
     handleSwapSend,
     handleSwapClaim,
     setDataOutput,
+    receivedCount,
     storage,
   };
 }

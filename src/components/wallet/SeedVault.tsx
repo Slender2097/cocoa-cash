@@ -20,7 +20,7 @@ import type { MintRestore } from "@/lib/cashu/restore";
 import type { ProofsByMint } from "@/lib/cashu/storage";
 import { mintLabel } from "@/lib/utils/mintLabel";
 
-type View = "home" | "reveal" | "confirm" | "confirmed" | "restore" | "replace" | "restoring" | "restored" | "backup";
+export type View = "home" | "reveal" | "confirm" | "confirmed" | "restore" | "replace" | "restoring" | "restored" | "backup";
 
 function pickThree(): number[] {
   const all = Array.from({ length: 12 }, (_, i) => i);
@@ -31,7 +31,7 @@ function pickThree(): number[] {
   return all.slice(0, 3).sort((a, b) => a - b);
 }
 
-function WordGrid({ words }: { words: string[] }) {
+export function WordGrid({ words }: { words: string[] }) {
   return (
     <ol className="grid grid-cols-2 gap-2 sm:grid-cols-3" data-testid="seed-grid">
       {words.map((w, i) => (
@@ -51,6 +51,7 @@ export default function SeedVault({
   onBackedUp,
   onRestore,
   onClose,
+  initialView = "home",
 }: {
   mnemonic: string;
   backedUp: boolean;
@@ -58,8 +59,9 @@ export default function SeedVault({
   onBackedUp: () => void;
   onRestore: (phrase: string, mints: string[], progress: (text: string) => void) => Promise<MintRestore[]>;
   onClose: () => void;
+  initialView?: View;
 }) {
-  const [view, setView] = useState<View>("home");
+  const [view, setView] = useState<View>(initialView);
   const words = useMemo(() => mnemonic.trim().split(/\s+/).filter(Boolean), [mnemonic]);
   const [ask, setAsk] = useState<number[]>([]);
   const [answers, setAnswers] = useState<Record<number, string>>({});

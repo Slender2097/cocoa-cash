@@ -21,6 +21,7 @@ import FlowSheet from "@/components/wallet/FlowSheet";
 import LightningSheet from "@/components/wallet/LightningSheet";
 import MintsPanel from "@/components/wallet/MintsPanel";
 import SeedVault from "@/components/wallet/SeedVault";
+import SeedPrompt, { seedPrompted } from "@/components/wallet/SeedPrompt";
 import HistoryPanel from "@/components/wallet/HistoryPanel";
 import type { Tx } from "@/components/wallet/HistoryPanel";
 import MenuPanel from "@/components/wallet/MenuPanel";
@@ -32,7 +33,7 @@ type Panel =
   | { k: "flow"; type: FlowType }
   | { k: "lightning" }
   | { k: "mints"; note?: string }
-  | { k: "vault" }
+  | { k: "vault"; backup?: boolean }
   | { k: "history" }
   | { k: "menu" }
   | null;
@@ -63,6 +64,7 @@ export default function Home() {
     handleSwapSend,
     handleSwapClaim,
     setDataOutput,
+    receivedCount,
     storage,
   } = useCashu();
   // Same storage instance as useCashu (see the note there).
@@ -73,7 +75,14 @@ export default function Home() {
   const [panel, setPanel] = useState<Panel>(null);
   const [scanApply, setScanApply] = useState<((t: string) => void) | null>(null);
   const [welcome, setWelcome] = useState(false);
-  const covered = !!panel || !!scanApply || welcome;
+  // The first receive asks once for the 12 words; the card waits until no other panel is open.
+  const [seedPrompt, setSeedPrompt] = useState(false);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- follows the hook's receive count
+    if (receivedCount > 0 && !seedPrompted()) setSeedPrompt(true);
+  }, [receivedCount]);
+  const showSeedPrompt = seedPrompt && !panel && !scanApply && !welcome && !!mnemonic;
+  const covered = !!panel || !!scanApply || welcome || showSeedPrompt;
   const hidden = usePageHidden();
   const longIdle = useIdle(STILL_AFTER_MS);
   const coverSettled = useHeld(covered, COVER_SETTLE_MS);
@@ -243,6 +252,7 @@ export default function Home() {
       )}
       {panel?.k === "vault" && (
         <SeedVault
+          initialView={panel.backup ? "backup" : "home"}
           mnemonic={mnemonic}
           backedUp={securityLevel >= 2}
           proofsByMint={proofsByMint}
@@ -253,6 +263,16 @@ export default function Home() {
       )}
       {panel?.k === "history" && <HistoryPanel transactions={transactions} onClose={close} />}
       {panel?.k === "menu" && <MenuPanel onClose={close} />}
+      {showSeedPrompt && (
+        <SeedPrompt
+          mnemonic={mnemonic}
+          onBackup={() => {
+            setSeedPrompt(false);
+            setPanel({ k: "vault", backup: true });
+          }}
+          onClose={() => setSeedPrompt(false)}
+        />
+      )}
       {scanApply && <Scanner onResult={scanApply} onClose={closeScanner} />}
       {welcome && <WelcomeModal onAccept={() => setWelcome(false)} />}
     </>
