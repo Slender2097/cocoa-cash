@@ -22,6 +22,7 @@ import LightningSheet from "@/components/wallet/LightningSheet";
 import MintsPanel from "@/components/wallet/MintsPanel";
 import SeedVault from "@/components/wallet/SeedVault";
 import SeedPrompt, { seedPrompted } from "@/components/wallet/SeedPrompt";
+import MintPrompt, { mintPrompted } from "@/components/wallet/MintPrompt";
 import HistoryPanel from "@/components/wallet/HistoryPanel";
 import type { Tx } from "@/components/wallet/HistoryPanel";
 import MenuPanel from "@/components/wallet/MenuPanel";
@@ -33,6 +34,7 @@ type Panel =
   | { k: "flow"; type: FlowType }
   | { k: "lightning" }
   | { k: "mints"; note?: string }
+  | { k: "mintPrompt" }
   | { k: "vault"; backup?: boolean }
   | { k: "history" }
   | { k: "menu" }
@@ -188,7 +190,7 @@ export default function Home() {
           </button>
           {/* four circles: on a narrow phone they all shrink together (to 44px at 320px wide) so the row still fits */}
           <div className="flex items-center gap-1.5 sm:gap-2" style={{ "--glyph": "clamp(44px, calc((100vw - 144px) / 4), 52px)" } as CSSProperties}>
-            <Glyph name="mints" label="Mints" onClick={() => setPanel({ k: "mints" })} />
+            <Glyph name="mints" label="Mints" onClick={() => setPanel(mintPrompted() ? { k: "mints" } : { k: "mintPrompt" })} />
             <Glyph name="history" label="History" onClick={() => setPanel({ k: "history" })} />
             <span className="relative">
               <Glyph name="vault" label="Seed vault" onClick={() => setPanel({ k: "vault" })} />
@@ -250,6 +252,7 @@ export default function Home() {
           onClose={close}
         />
       )}
+      {panel?.k === "mintPrompt" && <MintPrompt onClose={close} />}
       {panel?.k === "vault" && (
         <SeedVault
           initialView={panel.backup ? "backup" : "home"}
