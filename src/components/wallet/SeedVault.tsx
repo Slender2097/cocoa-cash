@@ -3,9 +3,10 @@
 // words, or replace it on a simple restore screen. Plus "Back up balance":
 // each mint's proofs as a standard Cashu token (NUT-00) to keep somewhere safe.
 //
-// Honest scope: this phrase is stored in this browser and does not restore
-// ecash yet (no NUT-13 deterministic secrets). Sats are the proofs saved in
-// this browser. The copy says so plainly.
+// Restore from phrase: new sats get NUT-13 secrets from this phrase, so the
+// 12 words plus the list of mints bring them back (NUT-09 restore, NUT-07
+// check). Sats from before NUT-13 have random secrets: the phrase cannot find
+// them, and Back up balance is the way to keep a copy. The copy says so.
 // MIT License
 
 import { useMemo, useState } from "react";
@@ -14,10 +15,12 @@ import Sheet from "./Sheet";
 import { CopyButton } from "@/components/ui/CopyButton";
 import { Check } from "@/components/ui/Check";
 import { backupTokens, backupText } from "@/lib/cashu/backup";
+import { knownMints, phraseChangeAtRisk } from "@/lib/cashu/restore";
+import type { MintRestore } from "@/lib/cashu/restore";
 import type { ProofsByMint } from "@/lib/cashu/storage";
 import { mintLabel } from "@/lib/utils/mintLabel";
 
-type View = "home" | "reveal" | "confirm" | "confirmed" | "restore" | "restored" | "backup";
+type View = "home" | "reveal" | "confirm" | "confirmed" | "restore" | "replace" | "restoring" | "restored" | "backup";
 
 function pickThree(): number[] {
   const all = Array.from({ length: 12 }, (_, i) => i);
@@ -53,7 +56,7 @@ export default function SeedVault({
   backedUp: boolean;
   proofsByMint: ProofsByMint;
   onBackedUp: () => void;
-  onRestore: (phrase: string) => Promise<boolean>;
+  onRestore: (phrase: string, mints: string[], progress: (text: string) => void) => Promise<MintRestore[]>;
   onClose: () => void;
 }) {
   const [view, setView] = useState<View>("home");
@@ -63,6 +66,9 @@ export default function SeedVault({
   const [wrong, setWrong] = useState(false);
   const [restore, setRestore] = useState<string[]>(Array(12).fill(""));
   const [restoreErr, setRestoreErr] = useState("");
+  const [mintsText, setMintsText] = useState("");
+  const [progress, setProgress] = useState("");
+  const [results, setResults] = useState<MintRestore[]>([]);
   const tokens = useMemo(() => (view === "backup" ? backupTokens(proofsByMint) : []), [view, proofsByMint]);
 
   const downloadBackup = () => {
@@ -101,18 +107,38 @@ export default function SeedVault({
   };
   const restorePhrase = restore.join(" ").trim();
   const restoreComplete = restore.every(Boolean);
+  const restoreMints = mintsText.split(/[\s,]+/).filter(Boolean);
+  const openRestore = () => {
+    setMintsText(knownMints().join("\n"));
+    setView("restore");
+  };
+  const runRestore = async () => {
+    setView("restoring");
+    setProgress("Starting…");
+    try {
+      setResults(await onRestore(restorePhrase, restoreMints, setProgress));
+      setView("restored");
+    } catch (e) {
+      setRestoreErr(e instanceof Error ? e.message : String(e));
+      setView("restore");
+    }
+  };
   const doRestore = async () => {
     if (!bip39.validateMnemonic(restorePhrase)) {
       return setRestoreErr("These 12 words are not a valid phrase. Check spelling and order.");
     }
-    if (await onRestore(restorePhrase)) setView("restored");
+    if (!restoreMints.length) return setRestoreErr("Add at least one mint. The phrase does not say which mints hold your sats.");
+    // A different phrase while this one still holds sats: ask first, keep the current one by default.
+    if (phraseChangeAtRisk(restorePhrase)) return setView("replace");
+    await runRestore();
   };
+  const restoredSats = results.reduce((s, r) => s + r.amount, 0);
 
   const title =
     view === "backup"
       ? "Back up balance"
-      : view === "restore" || view === "restored"
-        ? "Restore phrase"
+      : view === "restore" || view === "replace" || view === "restoring" || view === "restored"
+        ? "Restore from phrase"
         : view === "confirm" || view === "confirmed"
           ? "Confirm backup"
           : "Seed vault";
@@ -131,12 +157,12 @@ export default function SeedVault({
           <button className="btn-ghost w-full" onClick={() => setView("backup")} data-testid="backup-balance">
             Back up balance
           </button>
-          <button className="btn-ghost w-full" onClick={() => setView("restore")}>
-            Restore a phrase
+          <button className="btn-ghost w-full" onClick={openRestore} data-testid="seed-restore">
+            Restore from phrase
           </button>
           <p className="text-xs leading-relaxed text-[#e8fff7]/45">
-            Your sats are the ecash proofs saved in this browser. This phrase does not restore sats yet. To keep a copy of your
-            sats, use Back up balance. To move sats to another device, use Send and Claim.
+            Your sats are the ecash proofs saved in this browser. Sats you get from now on can be restored with these 12
+            words and the list of your mints. Sats from before this update cannot: keep a copy of those with Back up balance.
           </p>
         </div>
       )}
@@ -256,21 +282,78 @@ export default function SeedVault({
               </label>
             ))}
           </div>
+          <label className="block space-y-2">
+            <span className="text-sm text-[#e8fff7]/70">Mints to check, one per line</span>
+            <textarea
+              className="field min-h-24 font-mono text-sm"
+              value={mintsText}
+              onChange={(e) => {
+                setMintsText(e.target.value);
+                setRestoreErr("");
+              }}
+              placeholder="https://mint.example.com"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              data-testid="restore-mints"
+            />
+            <span className="block text-xs leading-relaxed text-[#e8fff7]/45">
+              The phrase does not say which mints you used. These are the mints this browser knows about. On a new device,
+              add the mints you used before.
+            </span>
+          </label>
           {restoreErr && <p className="text-center text-sm text-amber-200">{restoreErr}</p>}
-          <button className="btn-neon" disabled={!restoreComplete} onClick={doRestore}>
-            Restore phrase
+          <button className="btn-neon" disabled={!restoreComplete} onClick={doRestore} data-testid="restore-run">
+            Restore sats
           </button>
           <p className="text-xs leading-relaxed text-[#e8fff7]/45">
-            This replaces the phrase in this browser. It does not change your balance.
+            Restored sats are added to your balance. Nothing already in this browser is removed.
           </p>
         </div>
       )}
 
+      {view === "replace" && (
+        <div className="space-y-4" data-testid="restore-replace">
+          <p className="rounded-2xl border border-amber-300/30 bg-amber-300/5 px-4 py-3 text-sm leading-relaxed text-amber-100/90">
+            This is a different phrase from the one in this browser. Your current sats stay here and stay spendable, but they
+            will not be recoverable from the new phrase. Only your current phrase (or Back up balance) can bring them back.
+          </p>
+          <p className="text-xs leading-relaxed text-[#e8fff7]/55">
+            Write down your current 12 words before you switch. New sats will then come from the new phrase.
+          </p>
+          <button className="btn-neon" onClick={() => setView("home")} data-testid="restore-keep">
+            Keep my current phrase
+          </button>
+          <button className="btn-ghost w-full" onClick={runRestore} data-testid="restore-replace-confirm">
+            Switch phrase and restore
+          </button>
+        </div>
+      )}
+
+      {view === "restoring" && (
+        <div className="space-y-4 py-6 text-center" data-testid="restore-progress">
+          <p className="text-sm text-[#e8fff7]/80">{progress}</p>
+          <p className="text-xs text-[#e8fff7]/45">Keep this page open.</p>
+        </div>
+      )}
+
       {view === "restored" && (
-        <div className="space-y-5 py-4 text-center">
+        <div className="space-y-5 py-4 text-center" data-testid="restore-done">
           <Check />
-          <p className="text-2xl font-light glow-text">Phrase restored</p>
-          <p className="text-sm text-[#e8fff7]/60">Your balance is unchanged.</p>
+          <p className="text-2xl font-light glow-text">
+            {restoredSats > 0 ? `${restoredSats.toLocaleString("en-US")} sat restored` : "Phrase restored"}
+          </p>
+          <ul className="space-y-2 text-left">
+            {results.map((r) => (
+              <li key={r.mint} className="rounded-2xl border border-white/5 bg-[#07110d]/50 px-4 py-3 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="truncate text-[#e8fff7]">{mintLabel(r.mint)}</span>
+                  <span className="shrink-0 tabular-nums text-[#4ff4c6]">+{r.amount.toLocaleString("en-US")} sat</span>
+                </div>
+                {r.error && <p className="mt-1 text-xs text-amber-200">{r.error}. Try again later; nothing was lost.</p>}
+              </li>
+            ))}
+          </ul>
           <button className="btn-neon" onClick={onClose}>
             Done
           </button>

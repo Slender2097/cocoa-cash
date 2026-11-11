@@ -9,9 +9,10 @@
 // overwrites newer proofs" failure mode by construction.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import * as bip39 from "bip39";
 import { readProofs, onProofsChange, walletMintKey, sumProofs, requestPersistentStorage } from "@/lib/cashu/storage";
 import type { ProofsByMint, StoredProof } from "@/lib/cashu/storage";
+import { getMnemonic } from "@/lib/cashu/seed";
+import { restoreFromPhrase } from "@/lib/cashu/restore";
 
 const ls = {
   get: (k: string) => (typeof window === "undefined" ? null : localStorage.getItem(k)),
@@ -29,15 +30,10 @@ export default function useProofStorage() {
 
   // Load from disk once on the client, then follow every change.
   useEffect(() => {
-    let seed = ls.get("mnemonic");
-    if (!seed) {
-      // Local phrase (kept for the existing Security panel). It does not
-      // restore proofs; see the note in that panel.
-      seed = bip39.generateMnemonic(128);
-      ls.set("mnemonic", seed);
-    }
+    // The NUT-13 phrase (src/lib/cashu/seed.ts): created on first use, and
+    // every Wallet derives its new secrets from it.
     /* eslint-disable react-hooks/set-state-in-effect -- one-time hydration from localStorage */
-    setMnemonic(seed);
+    setMnemonic(getMnemonic());
     setSecurityLevelState(parseInt(ls.get("securityLevel") || "1", 10));
     setActiveMint(ls.get("activeMint") || "");
     setProofsByMint(readProofs());
@@ -52,24 +48,31 @@ export default function useProofStorage() {
     ls.set("securityLevel", String(level));
   }, []);
 
-  const restoreFromSeed = useCallback(async (words: string) => {
-    const trimmed = words.trim().toLowerCase();
-    if (!bip39.validateMnemonic(trimmed)) {
-      alert("❌ Invalid seed phrase. Please check the 12 words.");
-      return false;
-    }
-    setMnemonic(trimmed);
-    ls.set("mnemonic", trimmed);
-    setSecurityLevel(2);
-    return true;
-  }, [setSecurityLevel]);
-
   const switchMint = useCallback((newUrl: string) => {
     if (!newUrl || typeof newUrl !== "string") return;
     const key = walletMintKey(newUrl);
     setActiveMint(key);
     ls.set("activeMint", key);
   }, []);
+
+  /**
+   * Restore from phrase (NUT-13 + NUT-09 + NUT-07): adds the phrase's unspent
+   * proofs from `mints` to storage, and makes it the wallet's phrase. The
+   * caller confirms first when that would replace a phrase that holds sats
+   * (phraseChangeAtRisk in src/lib/cashu/restore.ts).
+   */
+  const restoreFromSeed = useCallback(
+    async (words: string, mints: string[], progress: (text: string) => void) => {
+      const results = await restoreFromPhrase(words, mints, progress);
+      setMnemonic(getMnemonic());
+      setSecurityLevel(2); // the user just typed the phrase from their copy
+      // On a fresh browser no mint is active yet: open the one that got sats back.
+      const first = results.find((r) => r.amount > 0);
+      if (!activeMint && first) switchMint(first.mint);
+      return results;
+    },
+    [setSecurityLevel, activeMint, switchMint]
+  );
 
   const currentProofs: StoredProof[] = useMemo(
     () => (activeMint ? proofsByMint[walletMintKey(activeMint)] || [] : []),
