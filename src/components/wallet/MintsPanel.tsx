@@ -2,11 +2,13 @@
 // The user's own mints (localStorage `savedMints`) as large cards. The active
 // one is marked; a tap on any other switches to it. The wallet never suggests
 // a mint: the only way to add one is to paste or type its URL. Reorder and
-// remove sit in a collapsed "Manage" section.
+// remove sit in a collapsed "Manage" section. A "?" on the Add mint card opens
+// a prompt to paste into an AI; closing it returns to the card as it was.
 // MIT License
 
 import { useEffect, useRef, useState } from "react";
 import Sheet from "./Sheet";
+import { MintHelp } from "./MintPrompt";
 import { mintLabel } from "@/lib/utils/mintLabel";
 import { readJSON, writeJSON, normalizeMint, walletMintKey, sumProofs } from "@/lib/cashu/storage";
 import type { ProofsByMint } from "@/lib/cashu/storage";
@@ -34,6 +36,7 @@ export default function MintsPanel({
   const [url, setUrl] = useState("");
   const [adding, setAdding] = useState(false);
   const [managing, setManaging] = useState(false);
+  const [help, setHelp] = useState(false);
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -84,8 +87,11 @@ export default function MintsPanel({
     save(next);
   };
 
-  return (
-    <Sheet title="Mints" onClose={onClose} keyboard={formOpen}>
+  const closeHelp = () => setHelp(false);
+
+  // Both sheets hear Escape; while the help card is up it only closes that card.
+  const sheet = (
+    <Sheet title="Mints" onClose={help ? closeHelp : onClose} keyboard={formOpen}>
       {note && <p className="mb-4 rounded-2xl border border-[#4ff4c6]/30 bg-[#4ff4c6]/5 px-4 py-3 text-sm text-[#a3ffe0]">{note}</p>}
 
       {cards.length > 0 && (
@@ -145,9 +151,31 @@ export default function MintsPanel({
             add(url);
           }}
         >
-          <label htmlFor="mint-url" className="block text-sm text-[#e8fff7]/70">
-            Mint URL
-          </label>
+          <div className="flex items-center justify-between">
+            <label htmlFor="mint-url" className="block text-sm text-[#e8fff7]/70">
+              Mint URL
+            </label>
+            {/* a 44px target around a small circle; the negative margins keep the row as tall as the label */}
+            <button
+              type="button"
+              onClick={() => {
+                // let a phone keyboard close, so the card does not open under it
+                (document.activeElement as HTMLElement | null)?.blur();
+                setHelp(true);
+              }}
+              aria-label="About mints"
+              title="About mints"
+              className="group -my-3 -mr-2 grid h-11 w-11 shrink-0 place-items-center"
+              data-testid="mint-help"
+            >
+              <span
+                aria-hidden
+                className="grid h-7 w-7 place-items-center rounded-full border border-[#4ff4c6]/15 bg-[#07110d]/40 text-sm font-semibold text-[#4ff4c6]/80 transition group-hover:border-[#4ff4c6]/60 group-hover:text-[#a3ffe0] group-hover:shadow-[0_0_24px_-6px_#4ff4c6] group-active:scale-95"
+              >
+                ?
+              </span>
+            </button>
+          </div>
           <input
             id="mint-url"
             ref={input}
@@ -213,5 +241,14 @@ export default function MintsPanel({
         </div>
       )}
     </Sheet>
+  );
+
+  // The help card is a second sheet beside this one, not inside it: inside the
+  // panel it would be clipped to it.
+  return (
+    <>
+      {sheet}
+      {help && <MintHelp onClose={closeHelp} />}
+    </>
   );
 }
