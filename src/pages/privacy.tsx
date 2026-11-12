@@ -5,7 +5,7 @@ export default function Privacy() {
     <div className="min-h-screen bg-[#14251f] text-[#e8fff7] py-12 px-6">
       <div className="max-w-4xl mx-auto">
         <h1 className="text-4xl font-bold mb-2">Privacy Policy</h1>
-        <p className="text-[#4ff4c6] mb-10">Last Updated: October 8, 2026</p>
+        <p className="text-[#4ff4c6] mb-10">Last Updated: November 12, 2026</p>
 
         <div className="prose prose-invert max-w-none text-[#e8fff7]/90 leading-relaxed text-sm space-y-8">
           <p>Cocoa Cash is a non-custodial wallet. We do not create accounts and we do not store your seed, proofs, or ecash on our servers. Those stay in your browser. The host that delivers this site can see technical request data such as IP address and user agent in ordinary server logs. We also load Vercel Analytics, which collects anonymous usage data and does not include your seed or proofs.</p>
@@ -27,7 +27,7 @@ export default function Privacy() {
           <p>When you interact with mints or Lightning nodes, you do so directly. Cocoa Cash has no visibility into or control over those interactions.</p>
 
           <h2 className="text-xl text-[#4ff4c6]">Your Responsibility</h2>
-          <p>Because everything is stored locally on your device, you are responsible for the security of your browser and device. We recommend backing up your tokens and not using private/incognito windows if you want to keep your data.</p>
+          <p>Because everything is stored locally on your device, you are responsible for the security of your browser and device. The 12-word phrase restores sats you receive after the November 2026 update. Sats you already held still need a token backup from the Seed vault. Clearing site data deletes the wallet.</p>
 
           <p className="text-xs text-[#e8fff7]/50 mt-12">
             Questions or concerns? Contact us at <a href="mailto:jose@cocoa.cash" className="text-[#4ff4c6] underline">jose@cocoa.cash</a>

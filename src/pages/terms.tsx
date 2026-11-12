@@ -5,7 +5,7 @@ export default function Terms() {
     <div className="min-h-screen bg-[#14251f] text-[#e8fff7] py-12 px-6">
       <div className="max-w-4xl mx-auto">
         <h1 className="text-4xl font-bold mb-2">Terms of Service</h1>
-        <p className="text-[#4ff4c6] mb-10">Last Updated: October 8, 2026</p>
+        <p className="text-[#4ff4c6] mb-10">Last Updated: November 12, 2026</p>
 
         <div className="prose prose-invert max-w-none text-[#e8fff7]/90 leading-relaxed text-sm space-y-8">
           <p><strong>IMPORTANT NOTICE:</strong> THESE TERMS OF SERVICE INCLUDE A MEDIATION-FIRST CLAUSE REQUIRING MEDIATION BEFORE ARBITRATION OR LITIGATION. PLEASE READ THESE TERMS CAREFULLY. IF YOU DO NOT AGREE, DO NOT USE COCOA CASH.</p>
@@ -25,7 +25,7 @@ export default function Terms() {
           <p>1.6 Code Disclaimer: The open-source code is provided without any guarantee of security, error-free operation, or technical support. Users must independently verify the authenticity, security, and integrity of the open-source code prior to use.</p>
 
           <h2 className="text-xl text-[#4ff4c6]">2. User Responsibilities &amp; Disclaimers</h2>
-          <p>2.1 User’s Sole Responsibility: You understand and agree that you use the Site and Services at your own risk and for your own account. You alone are fully responsible for selecting Mints, conducting transactions, and safeguarding your ecash and secret values. Cocoa Cash is not a party to and disclaims any responsibility for any agreements, terms, or disputes between you and any Mint.</p>
+          <p>2.1 User’s Sole Responsibility: You understand and agree that you use the Site and Services at your own risk and for your own account. You alone are fully responsible for selecting Mints, conducting transactions, and safeguarding your ecash and secret values. The 12-word phrase restores sats you receive after the November 2026 update. Sats you already held still need a token backup from the Seed vault. Clearing site data deletes the wallet. Cocoa Cash cannot recover a lost 12-word phrase, reverse a send, or restore sats if you clear site data or lose your device. Browser bugs, malicious extensions, device compromise, and clearing site data are your risk. Cocoa Cash is not a party to and disclaims any responsibility for any agreements, terms, or disputes between you and any Mint.</p>
           <p>2.2 No Partnership with Mints: Cocoa Cash is not affiliated with, endorsed by, or responsible for any Mint. We make no representations, warranties, or guarantees about any Mint’s integrity, legality, liquidity, or functionality. Your relationship with any Mint, including the issuance, redemption, or valuation of ecash, is solely a matter between you and that Mint. Cocoa Cash is not a party to any transaction between you and any Mint or third party. No agency, partnership, or joint venture relationship is formed by your use of the Site.</p>
           <p>2.3 Risk of Ecash: Ecash is an experimental, bearer-like digital asset that may not be recognized as money, currency, or a store of value. Anyone with the secret value has control over the ecash. You agree to review and understand all risks disclosed in our Risk Disclosure Statement before using ecash.</p>
 
@@ -93,7 +93,7 @@ export default function Terms() {
           <p>By using the Site, you consent to receive all communications electronically.</p>
 
           <h2 className="text-xl text-[#4ff4c6]">20. Risk Disclosure Statement</h2>
-          <p>Using ecash involves significant risks including legal, market, liquidity, counterparty, and operational risks. You acknowledge and accept these risks.</p>
+          <p>Using ecash involves significant risks including legal, market, liquidity, counterparty, and operational risks. A mint may go offline, freeze, or refuse redemption. Those losses are yours. You acknowledge and accept these risks.</p>
 
           <h2 className="text-xl text-[#4ff4c6]">21. Entire Agreement</h2>
           <p>These Terms represent the entire agreement between you and Cocoa Cash.</p>
