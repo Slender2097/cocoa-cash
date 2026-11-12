@@ -24,6 +24,8 @@
 // - Reactions: when the balance goes up (a mint, a claim, a tip claimed in
 //   another tab) a bright wave leaves the rings and sparks run around the rim;
 //   when it goes down (a melt, a send) the rings draw in and the glow dips.
+//   Either way a few dots fly (out from the center, or falling away) and the
+//   amount that moved ("+X" or "-X") floats up from the core and fades.
 //   The core only watches the `balance` prop, which every proof change already
 //   flows into, so no Cashu code is involved. A change that lands while the
 //   core is covered by a panel, or while the tab is hidden, is held and played
@@ -39,7 +41,7 @@ import useCorePointer from "@/hooks/useCorePointer";
 
 type Flow = "in" | "out";
 /** The latest reaction. A new `id` restarts its animations; `dir` is null once it has played. */
-type Beat = { id: number; dir: Flow | null };
+type Beat = { id: number; dir: Flow | null; amount: number };
 /** How alive the core looks when nothing else is going on. */
 type Mood = "asleep" | "awake" | "resting";
 /** A wake-up moment: a wave out through the rings, or a short flare. */
@@ -55,6 +57,23 @@ const SPARKS = [
   { from: 18, travel: 215, delay: 120 },
   { from: 138, travel: 190, delay: 170 },
   { from: 258, travel: 235, delay: 220 },
+];
+
+// Dots thrown by a reaction: angle (0 is up) and distance in px when sats come
+// in; horizontal offset and drop in px when they go out.
+const BURST = [
+  { a: 20, d: 128 },
+  { a: 75, d: 112 },
+  { a: 130, d: 134 },
+  { a: 185, d: 118 },
+  { a: 240, d: 130 },
+  { a: 300, d: 114 },
+];
+const FALL = [
+  { x: -46, y: 92, delay: 0 },
+  { x: -16, y: 118, delay: 60 },
+  { x: 18, y: 104, delay: 30 },
+  { x: 48, y: 86, delay: 90 },
 ];
 
 const LENS_STYLE = {
@@ -149,7 +168,7 @@ export default function BalanceCore({
 
   // What the core shows follows `balance`, but only while someone can see it.
   const [shown, setShown] = useState({ balance, mint });
-  const [beat, setBeat] = useState<Beat>({ id: 0, dir: null });
+  const [beat, setBeat] = useState<Beat>({ id: 0, dir: null, amount: 0 });
   const held = useRef(false);
 
   useEffect(() => {
@@ -167,7 +186,8 @@ export default function BalanceCore({
       () => {
         held.current = false;
         setShown({ balance, mint });
-        if (moved) setBeat((b) => ({ id: b.id + 1, dir: balance > shown.balance ? "in" : "out" }));
+        if (moved)
+          setBeat((b) => ({ id: b.id + 1, dir: balance > shown.balance ? "in" : "out", amount: Math.abs(balance - shown.balance) }));
       },
       held.current ? REVEAL_MS : moved ? SETTLE_MS : 0
     );
@@ -279,6 +299,8 @@ export default function BalanceCore({
                 </span>
                 {/* the rim flares once every 16 to 18 s */}
                 <span className={fx.ringFlare} />
+                {/* a reaction lights the rim up hard for a moment (sats in) */}
+                {flow === "in" && <span key={`rim${beat.id}`} className={fx.rimFlash} />}
                 {/* now and then a spark crackles along the rings */}
                 <span className={fx.crackle} />
                 {/* the side facing the pointer lights up: rings, a beam, the lens rim,
@@ -343,10 +365,43 @@ export default function BalanceCore({
               <span key={`flash${wake.id}`} className={fx.lensFlash} />
               <span key={`wake${wake.id}`} className={fx.wake} />
             </div>
+
+            {/* dots thrown by a reaction: out from the center, or falling away */}
+            {flow && !reduced && (
+              <div key={`dots${beat.id}`} className={fx.dots}>
+                {flow === "in"
+                  ? BURST.map((d) => (
+                      <span
+                        key={d.a}
+                        className={`${fx.dot} ${fx.dotOut}`}
+                        style={{ "--a": `${d.a}deg`, "--d": `${-d.d}px` } as React.CSSProperties}
+                      />
+                    ))
+                  : FALL.map((d) => (
+                      <span
+                        key={d.x}
+                        className={`${fx.dot} ${fx.dotFall}`}
+                        style={{ "--x": `${d.x}px`, "--y": `${d.y}px`, animationDelay: `${d.delay}ms` } as React.CSSProperties}
+                      />
+                    ))}
+              </div>
+            )}
           </div>
         </div>
 
         <Readout value={shown.balance} beat={beat.id} instant={reduced} />
+
+        {/* the amount that moved floats up from the core and fades */}
+        {flow && beat.amount > 0 && (
+          <span
+            key={`amt${beat.id}`}
+            aria-hidden
+            className={`${fx.amount} ${flow === "in" ? "text-[#a3ffe0] glow-text" : fx.amountOut} pointer-events-none absolute left-1/2 top-[22%] text-2xl font-light tabular-nums`}
+          >
+            {flow === "in" ? "+" : "-"}
+            {beat.amount.toLocaleString("en-US")}
+          </span>
+        )}
       </div>
 
       <button
