@@ -67,6 +67,7 @@ export type SendOp = Base & {
   fees: number;
   state: "PREPARED" | "DONE" | "FAILED";
   token?: string;
+  claimed?: boolean; // NUT-07 said every proof of the token is SPENT: hidden from History
 };
 export type ReceiveOp = Base & {
   kind: "receive";
@@ -485,6 +486,24 @@ export async function dropSpentProofs(token: string): Promise<{ token: string; s
   if (!spent) return { token: trimmed, spent: 0 };
   if (!live.length) throw new Error("This token was already spent.");
   return { token: getEncodedToken({ ...decoded, proofs: live }), spent };
+}
+
+/**
+ * For History: mark a sent token as claimed only when the mint reports every
+ * one of its proofs SPENT (NUT-07). A token with any unspent proof is kept.
+ * If the mint cannot answer this throws and nothing is marked.
+ */
+export async function markSentTokenIfClaimed(id: string): Promise<boolean> {
+  const op = getOp(id);
+  if (!op || op.kind !== "send" || !op.token) return false;
+  if (op.claimed) return true;
+  const wallet = await getWallet(op.mint);
+  const { proofs } = wallet.decodeToken(op.token);
+  const states = await wallet.checkProofsStates(proofs);
+  const allSpent = proofs.length > 0 && states.length === proofs.length && states.every((s) => s?.state === CheckStateEnum.SPENT);
+  if (!allSpent) return false;
+  putOp<SendOp>(id, { claimed: true });
+  return true;
 }
 
 /** Unlocked body of startReceive, for code that already holds the wallet lock (the tip board's claimAll). */

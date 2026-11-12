@@ -1,14 +1,16 @@
 // src/components/wallet/HistoryPanel.tsx
 // Local activity list plus every token this wallet created (from the journal),
 // and sends the mint never confirmed, with a Cancel that only returns the sats
-// when the mint says they are unspent (journal cancelSend, NUT-07).
+// when the mint says they are unspent (journal cancelSend, NUT-07). On open,
+// sent tokens the mint reports fully spent (claimed) are hidden; a mint that
+// does not answer leaves its tokens listed.
 // MIT License
 
 import { useEffect, useState } from "react";
 import Sheet from "./Sheet";
 import { CopyButton } from "@/components/ui/CopyButton";
 import { mintLabel } from "@/lib/utils/mintLabel";
-import { listOps, cancelSend, JOURNAL_EVENT } from "@/lib/cashu/journal";
+import { listOps, cancelSend, markSentTokenIfClaimed, JOURNAL_EVENT } from "@/lib/cashu/journal";
 import type { SendOp } from "@/lib/cashu/journal";
 import { sumProofs } from "@/lib/cashu/storage";
 import { errText } from "@/lib/cashu/outputs";
@@ -22,14 +24,21 @@ export default function HistoryPanel({ transactions, onClose }: { transactions: 
   const [stuck, setStuck] = useState<SendOp[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState("");
+  const [checking, setChecking] = useState(false);
   const load = () => {
     const sends = listOps().filter((o): o is SendOp => o.kind === "send");
-    setSent(sends.filter((o) => !!o.token));
+    setSent(sends.filter((o) => !!o.token && !o.claimed));
     setStuck(sends.filter((o) => o.state === "PREPARED"));
   };
   useEffect(() => {
     load(); // eslint-disable-line react-hooks/set-state-in-effect -- read the journal once on open
     window.addEventListener(JOURNAL_EVENT, load);
+    // NUT-07: hide sent tokens whose proofs are all spent. Errors keep the token.
+    const toCheck = listOps().filter((o): o is SendOp => o.kind === "send" && !!o.token && !o.claimed);
+    if (toCheck.length) {
+      setChecking(true);
+      Promise.allSettled(toCheck.map((o) => markSentTokenIfClaimed(o.id))).finally(() => setChecking(false));
+    }
     return () => window.removeEventListener(JOURNAL_EVENT, load);
   }, []);
 
@@ -94,7 +103,9 @@ export default function HistoryPanel({ transactions, onClose }: { transactions: 
       {sent.length > 0 && (
         <details className="mb-4 rounded-2xl border border-[#4ff4c6]/15 bg-[#07110d]/50 p-4">
           <summary className="cursor-pointer text-[#a3ffe0]">Sent tokens ({sent.length})</summary>
-          <p className="mt-2 text-xs text-[#e8fff7]/50">If a receiver never claimed one, claim it back yourself.</p>
+          <p className="mt-2 text-xs text-[#e8fff7]/50">
+            {checking ? "Checking which tokens were claimed…" : "If a receiver never claimed one, claim it back yourself."}
+          </p>
           <div className="mt-3 space-y-3">
             {sent.map((op) => (
               <div key={op.id} className="flex items-center justify-between gap-3">
