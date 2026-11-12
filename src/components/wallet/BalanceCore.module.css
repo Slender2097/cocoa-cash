@@ -1580,6 +1580,93 @@
 }
 
 
+/* ---- dots and amount (both directions) -----------------------------------------
+   Sats in: the rim lights up hard for half a second and a few dots shoot out
+   from the center. Sats out: the rings dim (above) and a few dots fall away.
+   Either way "+X" or "-X" floats up from the core and fades, in about 1 s. */
+
+.rimFlash {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: radial-gradient(closest-side, rgba(232, 255, 247, 0.95), rgba(163, 255, 224, 0.9));
+  mask-image: var(--rimSpark);
+  opacity: 0;
+  animation: rim-flash 0.5s ease-out;
+}
+@keyframes rim-flash {
+  18% {
+    opacity: 1;
+  }
+}
+
+.dots {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+}
+.dot {
+  position: absolute;
+  left: -2.5px;
+  top: -2.5px;
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  background: #4ff4c6;
+  box-shadow: 0 0 8px rgba(79, 244, 198, 0.9);
+  opacity: 0;
+}
+.dotOut {
+  animation: dot-out 0.8s cubic-bezier(0.2, 0.65, 0.3, 1);
+}
+@keyframes dot-out {
+  0% {
+    opacity: 1;
+    transform: rotate(var(--a)) translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(var(--a)) translateY(var(--d)) scale(0.5);
+  }
+}
+.dotFall {
+  animation: dot-fall 0.9s cubic-bezier(0.5, 0, 0.75, 0.6);
+}
+@keyframes dot-fall {
+  0% {
+    opacity: 0;
+    transform: translate(var(--x), 0);
+  }
+  15% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--x), var(--y)) scale(0.6);
+  }
+}
+
+.amount {
+  opacity: 0;
+  animation: amount-float 1s ease-out;
+}
+@keyframes amount-float {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  20% {
+    opacity: 1;
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -28px);
+  }
+}
+
 /* ---- reduced motion -----------------------------------------------------------
    Nothing moves, scales or flickers: no leaning (the pointer hook is not
    attached), no current, streaks, sparks, flares or waves, no drift, breath,
@@ -1644,6 +1731,24 @@
   }
   .core[data-flow="out"] .num {
     animation-name: num-out-still;
+  }
+  .rimFlash {
+    animation-name: still-glow;
+  }
+  .amount {
+    animation-name: amount-still;
+  }
+}
+@keyframes amount-still {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translateX(-50%);
+  }
+  20%,
+  60% {
+    opacity: 1;
+    transform: translateX(-50%);
   }
 }
 @keyframes still-glow {
