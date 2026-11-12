@@ -396,7 +396,7 @@ export default function BalanceCore({
           <span
             key={`amt${beat.id}`}
             aria-hidden
-            className={`${fx.amount} pointer-events-none absolute left-1/2 top-[22%] text-2xl font-light tabular-nums text-[#a3ffe0] glow-text`}
+            className={`${fx.amount} ${flow === "in" ? "text-[#a3ffe0] glow-text" : fx.amountOut} pointer-events-none absolute left-1/2 top-[22%] text-2xl font-light tabular-nums`}
           >
             {flow === "in" ? "+" : "-"}
             {beat.amount.toLocaleString("en-US")}

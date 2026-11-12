@@ -8,7 +8,8 @@
    (plus the number's glow during a reaction), so the browser can run it all
    on the compositor. The number is never inside .stage, so it never leans,
    drifts or dims with the rest.
-   Palette only: neon #4ff4c6 · pulse #a3ffe0 · text #e8fff7 · void #07110d.
+   Palette only: neon #4ff4c6 · pulse #a3ffe0 · text #e8fff7 · void #07110d,
+   plus the app's error red #ff8a8a (glow #ff6b6b) for the "-X" amount.
    MIT License */
 
 .core {
@@ -1649,6 +1650,12 @@
 .amount {
   opacity: 0;
   animation: amount-float 1s ease-out;
+}
+/* "-X" in a soft neon red: the app's error red, with the same glow as
+   glow-text (a lighter core over a more saturated halo, like the green). */
+.amountOut {
+  color: #ff8a8a;
+  text-shadow: 0 0 18px rgba(255, 107, 107, 0.75), 0 0 48px rgba(255, 107, 107, 0.35);
 }
 @keyframes amount-float {
   0% {
