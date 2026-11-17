@@ -90,6 +90,10 @@ const meltPaid = (op: MeltOp): NonNullable<DataOutput> => ({
   changeReceived: op.change || 0,
 });
 
+// A melt that failed with some inputs already spent elsewhere returns only the rest: its error says how much.
+const meltFailedText = (op: MeltOp) =>
+  op.spentSat && op.error ? op.error : "The mint could not pay the invoice. Your sats are back.";
+
 // While the invoice this tab just made is unpaid, its quote state is asked for
 // this often (one GET, for that quote only), for at most FAST_POLL_FOR_MS.
 const FAST_POLL_MS = 1_000;
@@ -192,7 +196,7 @@ export default function useCashu(): UseCashu {
         if (op.state !== "DONE" && op.state !== "FAILED") continue;
         pendingMelts.current.delete(id);
         setDataOutput(
-          op.state === "DONE" ? meltPaid(op) : { error: "Could not pay", details: "The mint could not pay the invoice. Your sats are back." }
+          op.state === "DONE" ? meltPaid(op) : { error: "Could not pay", details: meltFailedText(op) }
         );
       }
     };
@@ -343,7 +347,7 @@ export default function useCashu(): UseCashu {
       if (op.state === "DONE") {
         setDataOutput({ ...meltPaid(op), estimatedNewBalance: balance - op.amount - op.feeReserve + (op.change || 0) });
       } else if (op.state === "FAILED") {
-        setDataOutput({ error: "Could not pay", details: "The mint could not pay the invoice. Your sats are back." });
+        setDataOutput({ error: "Could not pay", details: meltFailedText(op) });
       } else {
         pendingMelts.current.add(op.id); // the ticker reports how it ends
         // Not an error: the journal holds the inputs and settles the melt.
@@ -368,6 +372,9 @@ export default function useCashu(): UseCashu {
     setIsProcessing(true);
     try {
       const op = await startSend(activeMint, amount); // NUT-03, token persisted, under the wallet lock
+      if (op.state === "FAILED" && op.spentSat && op.error) {
+        return setDataOutput({ error: "Could not create the token", details: op.error }); // part returned, part spent elsewhere
+      }
       if (op.state !== "DONE" || !op.token) {
         throw new Error(op.error || "The mint did not answer. The token will appear in History once recovered.");
       }
