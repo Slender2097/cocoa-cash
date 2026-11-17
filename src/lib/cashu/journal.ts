@@ -456,6 +456,9 @@ async function advanceMeltUnlocked(id: string): Promise<MeltOp> {
     } catch (e) {
       op = putOp<MeltOp>(id, { state: "PENDING", error: errText(e) }); // resolve via quote state below
       mintAnswered = isMintOperationError(e);
+      // Change blanks the mint already signed for another browser: nothing was paid, the quote
+      // stays UNPAID and the inputs come back below. Sync so the next melt uses fresh counters.
+      if (isCounterCollision(e)) await syncCounter(wallet, op.mint, op.keysetId, true).catch(() => {});
     }
   }
 
