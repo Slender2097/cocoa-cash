@@ -14,7 +14,7 @@ import type { MeltQuoteBolt11Response } from "@cashu/cashu-ts";
 import useProofStorage from "./useProofStorage";
 import type { ProofStorage } from "./useProofStorage";
 import { getWallet, walletLoaded, errText } from "@/lib/cashu/outputs";
-import { normalizeMint, isSavedMint, rememberMint, amountToNumber } from "@/lib/cashu/storage";
+import { normalizeMint, isSavedMint, rememberMint, amountToNumber, StorageFullError } from "@/lib/cashu/storage";
 import {
   startMint,
   advanceMint,
@@ -29,6 +29,8 @@ import {
   mintsWithOpenOps,
   getOp,
   importLegacyPendingMints,
+  pruneJournal,
+  CHANGE_LOST,
 } from "@/lib/cashu/journal";
 import type { MintOp, MeltOp } from "@/lib/cashu/journal";
 
@@ -38,7 +40,7 @@ export type DataOutput = {
   details?: string;
   message?: string;
   success?: string;
-  type?: "mint" | "melt-quote" | "melt" | "melt-pending" | "swap-send" | "claim-check" | "swap-claim";
+  type?: "mint" | "melt-quote" | "melt" | "melt-pending" | "swap-send" | "swap-send-pending" | "claim-check" | "swap-claim" | "claim-pending";
   /** claim-check: the token's mint, which is not in the user's mints list. */
   mint?: string;
   amount?: number;
@@ -88,6 +90,15 @@ const meltPaid = (op: MeltOp): NonNullable<DataOutput> => ({
   amount: op.amount,
   feeReserve: op.feeReserve,
   changeReceived: op.change || 0,
+  ...(op.changeLost ? { details: CHANGE_LOST } : {}),
+});
+
+/** The result shown for a melt the mint has not settled yet. Its inputs stay held in the journal. */
+const meltPending = (op: MeltOp): NonNullable<DataOutput> => ({
+  status: "Payment pending",
+  type: "melt-pending",
+  amount: op.amount,
+  details: "The mint is still paying. The sats stay reserved until the mint says whether it paid. You can see them under History.",
 });
 
 // While the invoice this tab just made is unpaid, its quote state is asked for
@@ -143,6 +154,11 @@ export default function useCashu(): UseCashu {
     },
     [switchMint]
   );
+
+  // Once per page load: drop finished journal records older than 30 days (under the wallet lock).
+  useEffect(() => {
+    if (hydrated) pruneJournal().catch(() => {});
+  }, [hydrated]);
 
   // Reconnect the last mint on load, so unfinished operations get recovered.
   // The last mint shows as active at once: loading its info and keys takes a
@@ -300,7 +316,7 @@ export default function useCashu(): UseCashu {
       setDataOutput({ status: "Invoice created", invoice: op.invoice, quoteId: op.id });
       setTimeout(() => kick.current(), 1500); // start polling the new quote without waiting for the next tick
     } catch (err) {
-      setDataOutput({ error: "Could not create the invoice", details: "Try again." });
+      setDataOutput({ error: "Could not create the invoice", details: err instanceof StorageFullError ? err.message : "Try again." });
     } finally {
       setIsProcessing(false);
     }
@@ -333,7 +349,7 @@ export default function useCashu(): UseCashu {
 
   const handleMelt = async (quoteId: string) => {
     const confirmed = meltQuotes.current.get(quoteId);
-    if (!confirmed) return setDataOutput({ error: "Could not pay", details: "Try again." });
+    if (!confirmed) return setDataOutput({ error: "Could not pay", details: "Paste the invoice again to get a fresh quote." });
     if (!guard()) return;
     setIsProcessing(true);
     try {
@@ -347,15 +363,17 @@ export default function useCashu(): UseCashu {
       } else {
         pendingMelts.current.add(op.id); // the ticker reports how it ends
         // Not an error: the journal holds the inputs and settles the melt.
-        setDataOutput({
-          status: "Payment pending",
-          type: "melt-pending",
-          amount: op.amount,
-          details: "The mint is still paying. The sats stay reserved and this wallet will finish or refund it automatically.",
-        });
+        setDataOutput(meltPending(op));
       }
     } catch (err) {
-      setDataOutput({ error: "Could not pay", details: "Try again." });
+      const op = getOp(quoteId);
+      if (op?.kind === "melt" && (op.state === "PREPARED" || op.state === "PENDING")) {
+        pendingMelts.current.add(op.id); // journaled before the throw: its sats are held, not lost
+        setDataOutput(meltPending(op));
+      } else {
+        // Before the journal (insufficient balance, expired quote, mint unreachable): say why.
+        setDataOutput({ error: "Could not pay", details: errText(err) });
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -368,8 +386,17 @@ export default function useCashu(): UseCashu {
     setIsProcessing(true);
     try {
       const op = await startSend(activeMint, amount); // NUT-03, token persisted, under the wallet lock
+      if (op.state === "PREPARED") {
+        // Not a failure: the inputs are held in the journal and the send can still finish. Sending again would reserve a second set.
+        return setDataOutput({
+          status: "The mint did not answer",
+          type: "swap-send-pending",
+          amount,
+          details: "These sats are held under History, Unfinished sends, until the mint answers or you cancel.",
+        });
+      }
       if (op.state !== "DONE" || !op.token) {
-        throw new Error(op.error || "The mint did not answer. The token will appear in History once recovered.");
+        return setDataOutput({ error: "Could not create the token", details: op.error || "The mint did not make the token." });
       }
       setDataOutput({
         status: "Token created successfully",
@@ -379,7 +406,7 @@ export default function useCashu(): UseCashu {
         message: "Copy this token and send it to the receiver. It is also saved in History.",
       });
     } catch (err) {
-      setDataOutput({ error: "Could not create the token", details: "Try again." });
+      setDataOutput({ error: "Could not create the token", details: errText(err) }); // before the journal: nothing is held
     } finally {
       setIsProcessing(false);
     }
@@ -394,7 +421,7 @@ export default function useCashu(): UseCashu {
       try {
         meta = getTokenMetadata(token);
       } catch (error) {
-        return setDataOutput({ error: "Could not receive", details: "Try again, or paste the token." });
+        return setDataOutput({ error: "Could not receive", details: "This is not a Cashu token. Paste the whole token." });
       }
       if (!isSavedMint(meta.mint)) {
         return setDataOutput({
@@ -410,8 +437,18 @@ export default function useCashu(): UseCashu {
     try {
       const { token: claimable, spent } = await dropSpentProofs(token); // NUT-07 filter only
       const op = await startReceive(claimable); // NUT-03 swap; final only on success
-      if (op.state === "FAILED") throw new Error(op.error || "Token could not be claimed");
-      if (op.state !== "DONE") throw new Error(op.error || "The mint did not answer. The claim will be retried automatically.");
+      if (op.state === "FAILED") {
+        const spentText = !op.error || op.error === "Token was already spent";
+        return setDataOutput({ error: "Could not receive", details: spentText ? "This token was already spent." : (op.error ?? undefined) });
+      }
+      if (op.state !== "DONE") {
+        return setDataOutput({
+          status: "Claim not finished",
+          type: "claim-pending",
+          details:
+            "The mint did not answer. This wallet will try again; keep the token until the claim finishes. You can stop it under History, Unfinished claims.",
+        });
+      }
       if (op.amount > 0) setReceivedCount((n) => n + 1);
       rememberMint(op.mint); // the user claimed from it: list it under Mints from now on
       if (normalizeMint(op.mint) !== normalizeMint(activeMint)) switchMint(op.mint);
@@ -424,7 +461,7 @@ export default function useCashu(): UseCashu {
         message: `Added ${op.amount} sat to your balance`,
       });
     } catch (error) {
-      setDataOutput({ error: "Could not receive", details: "Try again, or paste the token." });
+      setDataOutput({ error: "Could not receive", details: errText(error) }); // before the journal, e.g. "This token was already spent."
     } finally {
       setIsProcessing(false);
     }

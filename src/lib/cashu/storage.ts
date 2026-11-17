@@ -42,11 +42,28 @@ export function readJSON<T>(key: string, fallback: T): T {
   }
 }
 
+export const STORAGE_FULL_TEXT = "Storage for cocoa.cash in this browser is full. Do not clear site data: that deletes your wallet.";
+
+/** localStorage refused a write because this origin's quota is used up. Nothing was written. */
+export class StorageFullError extends Error {
+  constructor() {
+    super(STORAGE_FULL_TEXT);
+    this.name = "StorageFullError";
+  }
+}
+
+const isQuotaError = (e: unknown): boolean =>
+  e instanceof DOMException &&
+  (e.name === "QuotaExceededError" || e.name === "NS_ERROR_DOM_QUOTA_REACHED" || e.code === 22 || e.code === 1014);
+
 export function writeJSON(key: string, value: unknown): void {
-  localStorage.setItem(
-    key,
-    JSON.stringify(value, (_k, v) => (typeof v === "bigint" ? Number(v) : v))
-  );
+  const text = JSON.stringify(value, (_k, v) => (typeof v === "bigint" ? Number(v) : v));
+  try {
+    localStorage.setItem(key, text);
+  } catch (e) {
+    if (isQuotaError(e)) throw new StorageFullError();
+    throw e;
+  }
 }
 
 /** cashu-ts v4 uses an `Amount` class; older data and other wallets use numbers. */

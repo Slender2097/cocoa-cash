@@ -29,6 +29,10 @@ import MenuPanel from "@/components/wallet/MenuPanel";
 import Scanner from "@/components/wallet/Scanner";
 import WelcomeModal from "@/components/wallet/WelcomeModal";
 import { mintLabel } from "@/lib/utils/mintLabel";
+import { writeJSON } from "@/lib/cashu/storage";
+
+// The local activity list keeps the newest entries only (the journal has its own pruning).
+const MAX_HISTORY = 500;
 
 type Panel =
   | { k: "flow"; type: FlowType }
@@ -102,7 +106,7 @@ export default function Home() {
     /* eslint-disable react-hooks/set-state-in-effect -- one-time hydration from localStorage */
     if (localStorage.getItem("cocoa-welcome-accepted") !== "true") setWelcome(true);
     try {
-      setTransactions(JSON.parse(localStorage.getItem("transaction_history") || "[]"));
+      setTransactions(JSON.parse(localStorage.getItem("transaction_history") || "[]").slice(0, MAX_HISTORY));
     } catch {
       // keep empty
     }
@@ -144,8 +148,12 @@ export default function Home() {
     const tx: Tx = { id: Date.now(), type: d.type, amount: d.amount * (SIGN[d.type] || 1), mint: activeMint, timestamp: new Date().toLocaleString() };
     // eslint-disable-next-line react-hooks/set-state-in-effect -- records the hook's latest result
     setTransactions((prev) => {
-      const next = [tx, ...prev];
-      localStorage.setItem("transaction_history", JSON.stringify(next));
+      const next = [tx, ...prev].slice(0, MAX_HISTORY);
+      try {
+        writeJSON("transaction_history", next);
+      } catch {
+        // storage full: the list still shows for this visit; the journal reports the full store on the next action
+      }
       return next;
     });
   }, [dataOutput, activeMint]);

@@ -3,15 +3,17 @@
 // and sends the mint never confirmed, with a Cancel that only returns the sats
 // when the mint says they are unspent (journal cancelSend, NUT-07). On open,
 // sent tokens the mint reports fully spent (claimed) are hidden; a mint that
-// does not answer leaves its tokens listed.
+// does not answer leaves its tokens listed. Payments in progress (melts) show
+// the sats they hold with "Check again" (no cancel: only the mint can settle a
+// melt), and unfinished claims get a "Stop" that hands the token back.
 // MIT License
 
 import { useEffect, useState } from "react";
 import Sheet from "./Sheet";
 import { CopyButton } from "@/components/ui/CopyButton";
 import { mintLabel } from "@/lib/utils/mintLabel";
-import { listOps, cancelSend, markSentTokenIfClaimed, JOURNAL_EVENT } from "@/lib/cashu/journal";
-import type { SendOp } from "@/lib/cashu/journal";
+import { listOps, cancelSend, markSentTokenIfClaimed, advanceMelt, stopReceive, receiveToken, STOPPED, JOURNAL_EVENT } from "@/lib/cashu/journal";
+import type { SendOp, MeltOp, ReceiveOp } from "@/lib/cashu/journal";
 import { sumProofs } from "@/lib/cashu/storage";
 import { errText } from "@/lib/cashu/outputs";
 
@@ -25,10 +27,15 @@ export default function HistoryPanel({ transactions, onClose }: { transactions: 
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [checking, setChecking] = useState(false);
+  const [melts, setMelts] = useState<MeltOp[]>([]);
+  const [claims, setClaims] = useState<ReceiveOp[]>([]);
   const load = () => {
-    const sends = listOps().filter((o): o is SendOp => o.kind === "send");
+    const ops = listOps();
+    const sends = ops.filter((o): o is SendOp => o.kind === "send");
     setSent(sends.filter((o) => !!o.token && !o.claimed));
     setStuck(sends.filter((o) => o.state === "PREPARED"));
+    setMelts(ops.filter((o): o is MeltOp => o.kind === "melt" && (o.state === "PREPARED" || o.state === "PENDING")));
+    setClaims(ops.filter((o): o is ReceiveOp => o.kind === "receive" && (o.state === "PREPARED" || o.error === STOPPED)));
   };
   useEffect(() => {
     load(); // eslint-disable-line react-hooks/set-state-in-effect -- read the journal once on open
@@ -56,6 +63,43 @@ export default function HistoryPanel({ transactions, onClose }: { transactions: 
       } else {
         setNote("The mint has not settled these sats yet, so they stay held. Try again later.");
       }
+    } catch (e) {
+      setNote(`Could not reach the mint: ${errText(e)}`);
+    } finally {
+      setBusy(null);
+      load();
+    }
+  };
+
+  const checkMelt = async (id: string) => {
+    setBusy(id);
+    setNote("");
+    try {
+      const op = await advanceMelt(id); // NUT-05 quote state; refunds only if NUT-07 says the inputs are UNSPENT
+      if (op.state === "DONE") {
+        setNote(op.changeLost ? `Paid ${op.amount} sat. ${op.error}` : `Paid ${op.amount} sat. ${op.change || 0} sat change are back in your balance.`);
+      } else if (op.state === "FAILED") {
+        setNote(op.error && op.error !== "Payment failed" ? op.error : "The mint could not pay the invoice. Your sats are back.");
+      } else {
+        setNote("The mint has not settled this payment yet, so the sats stay held. Check again later.");
+      }
+    } catch (e) {
+      setNote(`Could not reach the mint: ${errText(e)}`);
+    } finally {
+      setBusy(null);
+      load();
+    }
+  };
+
+  const stop = async (id: string) => {
+    setBusy(id);
+    setNote("");
+    try {
+      const op = await stopReceive(id); // only if NUT-07 says the token is still UNSPENT
+      if (op.state === "FAILED" && op.error === STOPPED) setNote("Stopped. Copy the token below to keep it, or claim it again later.");
+      else if (op.state === "DONE") setNote(`The claim finished after all. ${op.amount} sat are in your balance.`);
+      else if (op.state === "FAILED") setNote("This token was already spent.");
+      else setNote("The mint did not say whether this token is still unspent, so the claim keeps going. Try again later.");
     } catch (e) {
       setNote(`Could not reach the mint: ${errText(e)}`);
     } finally {
@@ -94,6 +138,67 @@ export default function HistoryPanel({ transactions, onClose }: { transactions: 
                   <button className="btn-ghost w-full !py-2 !text-sm" disabled={!!busy} onClick={() => cancel(op.id)}>
                     {busy === op.id ? "Checking…" : "Cancel"}
                   </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {melts.length > 0 && (
+        <div className="mb-4 rounded-2xl border border-amber-300/30 bg-amber-300/5 p-4" data-testid="pending-melts">
+          <p className="text-[#e8fff7]">Payments in progress ({melts.length})</p>
+          <p className="mt-1 text-xs text-[#e8fff7]/50">
+            These sats are held until the mint says whether it paid. Only the mint can settle a payment, so there is no cancel.
+          </p>
+          <div className="mt-3 space-y-3">
+            {melts.map((op) => (
+              <div key={op.id} className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm text-[#e8fff7]">
+                    {sumProofs(op.inputs).toLocaleString("en-US")} sat held · {mintLabel(op.mint)}
+                  </p>
+                  <p className="truncate text-xs text-[#e8fff7]/50">
+                    Paying {op.amount.toLocaleString("en-US")} sat · {new Date(op.createdAt).toLocaleString()}
+                    {op.error ? ` · ${op.error}` : ""}
+                  </p>
+                </div>
+                <div className="w-32 shrink-0">
+                  <button className="btn-ghost w-full !py-2 !text-sm" disabled={!!busy} onClick={() => checkMelt(op.id)}>
+                    {busy === op.id ? "Checking…" : "Check again"}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {claims.length > 0 && (
+        <div className="mb-4 rounded-2xl border border-amber-300/30 bg-amber-300/5 p-4" data-testid="unfinished-claims">
+          <p className="text-[#e8fff7]">Unfinished claims ({claims.length})</p>
+          <p className="mt-1 text-xs text-[#e8fff7]/50">
+            The mint has not finished these, so this wallet keeps trying. Stop asks the mint first and gives the token back only if it
+            was never spent.
+          </p>
+          <div className="mt-3 space-y-3">
+            {claims.map((op) => (
+              <div key={op.id} className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm text-[#e8fff7]">
+                    {sumProofs(op.inputs).toLocaleString("en-US")} sat · {mintLabel(op.mint)}
+                  </p>
+                  <p className="truncate text-xs text-[#e8fff7]/50">
+                    {new Date(op.createdAt).toLocaleString()}
+                    {op.error ? ` · ${op.error}` : ""}
+                  </p>
+                </div>
+                <div className="w-28 shrink-0">
+                  {op.state === "PREPARED" ? (
+                    <button className="btn-ghost w-full !py-2 !text-sm" disabled={!!busy} onClick={() => stop(op.id)}>
+                      {busy === op.id ? "Checking…" : "Stop"}
+                    </button>
+                  ) : (
+                    <CopyButton text={receiveToken(op)} label="Copy" />
+                  )}
                 </div>
               </div>
             ))}
