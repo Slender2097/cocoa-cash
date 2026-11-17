@@ -15,6 +15,10 @@
 //   * A lost reply is resolved with NUT-09 restore of the persisted outputs.
 //     NUT-07 is only used to decide what to do next. It never counts as
 //     a payment.
+//   * A mint op counts NUT-09 as its issuance only when the quote is ISSUED.
+//     NUT error 10002 (outputs already signed) means another browser with the
+//     same phrase used these counters: the counter is synced and the outputs
+//     are never restored (see "Counter collisions" below).
 //   * Every advance* function is idempotent: safe to call again after a crash,
 //     reload or network error.
 //   * Every exported operation runs under the cross-tab wallet lock
@@ -29,6 +33,7 @@ import type { StoredProof } from "./storage";
 import { getWallet, serializeOutputs, deserializeOutputs, restoreOutputs, errText, patchedMintRequest } from "./outputs";
 import type { SerializedOutput } from "./outputs";
 import { withWalletLock, ifWalletLockFree } from "./lock";
+import { counterSource, currentSeed, rememberUsedMint } from "./seed";
 
 // ---------------------------------------------------------------------------
 // Record store
@@ -68,6 +73,7 @@ export type SendOp = Base & {
   state: "PREPARED" | "DONE" | "FAILED";
   token?: string;
   claimed?: boolean; // NUT-07 said every proof of the token is SPENT: hidden from History
+  collided?: boolean; // the mint said 10002: its outputs are another browser's, never restore them
 };
 export type ReceiveOp = Base & {
   kind: "receive";
@@ -78,6 +84,7 @@ export type ReceiveOp = Base & {
   fees: number;
   needsKey?: boolean; // P2PK inputs: only the tip board (which holds the key) can advance it
   state: "PREPARED" | "DONE" | "FAILED";
+  collided?: boolean; // the mint said 10002: its outputs are another browser's, never restore them
 };
 export type Op = MintOp | MeltOp | SendOp | ReceiveOp;
 
@@ -91,12 +98,20 @@ export function listOps(): Op[] {
 }
 export const getOp = (id: string): Op | null => readJSON<Record<string, Op>>(JOURNAL, {})[id] || null;
 
-/** Write-once-aware upsert. Re-reads storage first so tabs don't clobber each other. */
-export function putOp<T extends Op>(id: string, patch: Partial<T>): T {
+/**
+ * Write-once-aware upsert. Re-reads storage first so tabs don't clobber each other.
+ * `opts.replace` lifts ONCE for the named fields. Its only caller is the
+ * counter-collision rebuild of a mint quote's outputs, after the mint said
+ * the quote is still PAID (advanceMintUnlocked).
+ */
+export function putOp<T extends Op>(id: string, patch: Partial<T>, opts: { replace?: Array<"outputs"> } = {}): T {
   const all = readJSON<Record<string, Op>>(JOURNAL, {});
   const prev = (all[id] || {}) as Record<string, unknown>;
   const next: Record<string, unknown> = { ...prev, ...patch, id, updatedAt: Date.now() };
-  for (const f of ONCE) if (prev[f] !== undefined && prev[f] !== null) next[f] = prev[f];
+  for (const f of ONCE) {
+    if ((opts.replace as string[] | undefined)?.includes(f)) continue;
+    if (prev[f] !== undefined && prev[f] !== null) next[f] = prev[f];
+  }
   all[id] = next as Op;
   writeJSON(JOURNAL, all);
   if (typeof window !== "undefined") window.dispatchEvent(new Event(JOURNAL_EVENT));
@@ -121,6 +136,58 @@ async function inputsStillUnspent(wallet: Wallet, inputs: StoredProof[]): Promis
     return null; // PENDING: decide later
   } catch {
     return null; // mint unreachable: decide later
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Counter collisions (NUT-13)
+//
+// Counters live in this browser. The same phrase in a second browser, or a
+// mint left off the restore list, starts a keyset at counter 0 again, so its
+// outputs are byte-identical to outputs the mint already signed for the other
+// browser. The mint refuses them with NUT error 10002. Restoring those outputs
+// (NUT-09) would return the other browser's proofs, so they are never
+// restored. Instead the counter is synced: NUT-09 from the stored counter
+// only to find the last signed counter, then the counter is raised past it.
+// The proofs that probe returns are discarded, never added to the balance.
+// ---------------------------------------------------------------------------
+
+const OUTPUTS_ALREADY_SIGNED = 10002;
+const isCounterCollision = (e: unknown) => isMintOperationError(e) && e.code === OUTPUTS_ALREADY_SIGNED;
+const SYNC_GAP_LIMIT = 300; // same gap limit as restore.ts
+// New outputs start this far past the last signature: counters the other
+// browser reserved after it (unused change blanks) are invisible to NUT-09.
+const SYNC_MARGIN = 100;
+
+/**
+ * Raise this phrase's counter for `keysetId` at `mint` past every counter the
+ * mint has signed. Adds no proofs. `collided`: the mint already refused our
+ * outputs, so move up by at least the margin even if NUT-09 finds nothing.
+ */
+async function syncCounter(wallet: Wallet, mint: string, keysetId: string, collided: boolean): Promise<void> {
+  const counters = counterSource(mint, currentSeed().fp);
+  const { start } = await counters.reserve(keysetId, 0); // a peek, changes nothing
+  const res = await wallet.batchRestore(SYNC_GAP_LIMIT, undefined, start, keysetId); // NUT-09, proofs discarded
+  const last = res.lastCounterWithSignature;
+  if (last === undefined && !collided) return;
+  await counters.advanceToAtLeast(keysetId, (last === undefined ? start : last + 1) + SYNC_MARGIN);
+  rememberUsedMint(mint);
+}
+
+/**
+ * Before the first outputs this phrase builds for the wallet's keyset at a
+ * mint (no stored counter yet), probe for counters another browser already
+ * used. Best effort: a mint without NUT-09, or one that does not answer, is
+ * left to the 10002 handling.
+ */
+async function syncCounterOnFirstUse(wallet: Wallet, mint: string): Promise<void> {
+  try {
+    const keysetId = wallet.keysetId;
+    const known = await counterSource(mint, currentSeed().fp).snapshot?.();
+    if (!known || known[keysetId] !== undefined) return;
+    await syncCounter(wallet, mint, keysetId, false);
+  } catch {
+    // carry on as before
   }
 }
 
@@ -156,7 +223,10 @@ export async function prepareMintOutputs(wallet: Wallet, amount: number, quoteId
   return { outputs: serializeOutputs(preview.outputData), keysetId: preview.keysetId };
 }
 
-/** NUT-04 mint with the persisted outputs; NUT-09 restore if the reply was lost. */
+/**
+ * NUT-04 mint with the persisted outputs. A lost reply is recovered by the
+ * caller, with NUT-09, only once the quote is ISSUED (advanceMintUnlocked).
+ */
 export async function issueMint(wallet: Wallet, quoteId: string, outputs: SerializedOutput[], keysetId: string): Promise<Proof[]> {
   const outputData = deserializeOutputs(outputs);
   const preview = {
@@ -166,13 +236,7 @@ export async function issueMint(wallet: Wallet, quoteId: string, outputs: Serial
     keysetId,
     quote: { quote: quoteId },
   } as unknown as MintPreview; // rebuilt from the persisted record; completeMint only reads these fields
-  try {
-    return await wallet.completeMint(preview);
-  } catch (e) {
-    const restored = await restoreOutputs(wallet, outputData);
-    if (restored.length) return restored;
-    throw e;
-  }
+  return wallet.completeMint(preview);
 }
 
 /**
@@ -199,6 +263,7 @@ export async function swapWithRecovery(
     const res = await wallet.completeSwap(preview, args.privkey);
     return { keep: res.keep || [], send: res.send || [] };
   } catch (e) {
+    if (isCounterCollision(e)) throw e; // another browser's outputs: never restore them
     const unspent = await inputsStillUnspent(wallet, args.inputs);
     if (unspent !== false) throw e; // still spendable or unknown: retry later
     const keep = await restoreOutputs(wallet, keepData);
@@ -247,6 +312,7 @@ async function advanceMintUnlocked(id: string): Promise<MintOp> {
       return putOp<MintOp>(id, { state: "FAILED", error: "Quote was already issued" });
     }
     if (!op.outputs) {
+      await syncCounterOnFirstUse(wallet, op.mint);
       const { outputs, keysetId } = await prepareMintOutputs(wallet, op.amount, op.id);
       op = putOp<MintOp>(id, { outputs, keysetId, state: "ISSUING" });
     } else {
@@ -254,6 +320,7 @@ async function advanceMintUnlocked(id: string): Promise<MintOp> {
     }
   }
   if (op.state === "ISSUING" && op.outputs && op.keysetId) {
+    const keysetId = op.keysetId;
     try {
       const proofs = await issueMint(wallet, op.id, op.outputs, op.keysetId);
       addProofs(op.mint, proofs);
@@ -261,7 +328,20 @@ async function advanceMintUnlocked(id: string): Promise<MintOp> {
     } catch (e) {
       op = putOp<MintOp>(id, { error: errText(e) }); // stays ISSUING; retried later
       try {
-        if ((await checkMintQuoteState(wallet, op.mint, op.id, op.amount)) === MintQuoteState.ISSUED) {
+        const state = await checkMintQuoteState(wallet, op.mint, op.id, op.amount);
+        if (state === MintQuoteState.PAID && isCounterCollision(e)) {
+          // Not issued, and the mint already signed these outputs for someone
+          // else (same phrase in another browser). Sync the counter, then, only
+          // if a fresh check still says PAID, replace the outputs with fresh ones.
+          await syncCounter(wallet, op.mint, keysetId, true);
+          if ((await checkMintQuoteState(wallet, op.mint, op.id, op.amount)) === MintQuoteState.PAID) {
+            const fresh = await prepareMintOutputs(wallet, op.amount, op.id);
+            op = putOp<MintOp>(id, { ...fresh }, { replace: ["outputs"] }); // persisted before the request
+            const proofs = await issueMint(wallet, op.id, fresh.outputs, fresh.keysetId);
+            addProofs(op.mint, proofs);
+            op = putOp<MintOp>(id, { state: "DONE", error: null });
+          }
+        } else if (state === MintQuoteState.ISSUED) {
           // Issued: NUT-09 is authoritative. Only an empty (not failed) restore is final.
           const restored = await restoreOutputs(wallet, deserializeOutputs(op.outputs));
           if (restored.length) {
@@ -310,6 +390,7 @@ async function startMeltUnlocked(mint: string, invoice: string, quote: MeltQuote
   if (sumProofs(send) < amount + feeReserve) {
     throw new Error(`Insufficient balance: need ${amount + feeReserve} sat (incl. fee reserve), have ${sumProofs(spendable)}`);
   }
+  await syncCounterOnFirstUse(wallet, mint);
   const preview = await wallet.prepareMelt("bolt11", quote, send);
   const op = putOp<MeltOp>(quote.quote, {
     kind: "melt",
@@ -408,6 +489,7 @@ async function startSendUnlocked(mint: string, amount: number): Promise<SendOp> 
   const spendable = readProofs()[walletMintKey(mint)] || []; // read under the lock, after any wait
   const { send } = wallet.selectProofsToSend(spendable.map(toProofLike), amount, true);
   if (sumProofs(send) < amount) throw new Error("Insufficient balance");
+  await syncCounterOnFirstUse(wallet, mint);
   const preview = await wallet.prepareSwapToSend(amount, send);
   const op = putOp<SendOp>(newId("send"), {
     kind: "send",
@@ -429,6 +511,7 @@ async function advanceSendUnlocked(id: string): Promise<SendOp> {
   const op = getOp(id) as SendOp;
   if (op.state !== "PREPARED") return op;
   const wallet = await getWallet(op.mint);
+  if (op.collided) return settleCollidedSend(wallet, op);
   try {
     const res = await swapWithRecovery(wallet, {
       inputs: op.inputs,
@@ -445,8 +528,27 @@ async function advanceSendUnlocked(id: string): Promise<SendOp> {
     addProofs(op.mint, res.keep);
     return putOp<SendOp>(id, { state: "DONE", error: null });
   } catch (e) {
+    if (isCounterCollision(e)) {
+      const flagged = putOp<SendOp>(id, { collided: true, error: errText(e) });
+      await syncCounter(wallet, op.mint, op.keysetId, true).catch(() => {}); // next send uses fresh counters
+      return settleCollidedSend(wallet, flagged);
+    }
     return putOp<SendOp>(id, { error: errText(e) }); // stays PREPARED; retried or cancelled later
   }
+}
+
+/** A send the mint refused with 10002 never ran: its inputs come back once NUT-07 says they are UNSPENT. */
+async function settleCollidedSend(wallet: Wallet, op: SendOp): Promise<SendOp> {
+  const unspent = await inputsStillUnspent(wallet, op.inputs);
+  if (unspent === true) {
+    addProofs(op.mint, op.inputs);
+    return putOp<SendOp>(op.id, {
+      state: "FAILED",
+      error: "The mint had already seen this wallet's next outputs (are these 12 words open in another browser?). Nothing was sent, and the sats are back in your balance.",
+    });
+  }
+  if (unspent === false) return putOp<SendOp>(op.id, { state: "FAILED", error: "Inputs were spent elsewhere" });
+  return op; // pending or no answer: stays PREPARED, checked again later
 }
 
 /** Give up on a send that never reached the mint: only if NUT-07 says inputs are UNSPENT. */
@@ -510,6 +612,7 @@ export async function markSentTokenIfClaimed(id: string): Promise<boolean> {
 export async function startReceiveUnlocked(token: string, opts: { privkey?: string; id?: string } = {}): Promise<ReceiveOp> {
   const meta = getTokenMetadata(token.trim());
   const wallet = await getWallet(meta.mint);
+  await syncCounterOnFirstUse(wallet, meta.mint);
   const preview = await wallet.prepareSwapToReceive(token.trim(), opts.privkey ? { privkey: opts.privkey } : undefined);
   const op = putOp<ReceiveOp>(opts.id || newId("recv"), {
     kind: "receive",
@@ -547,6 +650,15 @@ export async function advanceReceiveUnlocked(id: string, privkey?: string): Prom
     addProofs(op.mint, proofs);
     return putOp<ReceiveOp>(id, { state: "DONE", amount: sumProofs(proofs), error: null });
   } catch (e) {
+    if (isCounterCollision(e)) {
+      // Nothing was claimed and the token is untouched. Claiming it again builds fresh outputs.
+      await syncCounter(wallet, op.mint, op.keysetId, true).catch(() => {});
+      return putOp<ReceiveOp>(id, {
+        state: "FAILED",
+        collided: true,
+        error: "The mint had already seen this wallet's next outputs (are these 12 words open in another browser?). Nothing was claimed. Claim the token again.",
+      });
+    }
     return putOp<ReceiveOp>(id, { error: errText(e) }); // retried later
   }
 }
