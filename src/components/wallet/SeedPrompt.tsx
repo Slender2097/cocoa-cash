@@ -35,7 +35,7 @@ export default function SeedPrompt({ mnemonic, onBackup, onClose }: { mnemonic: 
   return (
     <Sheet title="Your 12 words" onClose={dismiss}>
       <div className="space-y-4" data-testid="seed-prompt">
-        <p className="text-sm text-[#e8fff7]/70">These 12 words are the key to your wallet. Write them down and keep them safe.</p>
+        <p className="text-sm text-[#e8fff7]/70">These 12 words restore the sats you receive from now on, together with your list of mints. Anyone with them can take those sats. Write them down and keep them safe.</p>
         <WordGrid words={words} />
         <button className="btn-neon" onClick={dismiss}>
           Done
