@@ -364,9 +364,10 @@ async function startMeltUnlocked(mint: string, invoice: string, quote: MeltQuote
   return advanceMeltUnlocked(op.id);
 }
 
-// A paid melt whose change could not be fetched this many rounds, from a mint
-// that does not list NUT-09, is closed as DONE with no change.
-const CHANGE_GIVE_UP_TRIES = 5;
+// A paid melt whose change could not be fetched this many rounds (about a
+// minute of background checks, or "Check again" presses), from a mint that
+// does not list NUT-09, is closed as DONE with no change.
+const CHANGE_GIVE_UP_TRIES = 20;
 export const CHANGE_LOST = "The mint paid the invoice but did not return the change, and it cannot restore it.";
 const mintCanRestore = (wallet: Wallet): boolean => {
   try {

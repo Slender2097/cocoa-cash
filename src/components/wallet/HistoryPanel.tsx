@@ -79,7 +79,9 @@ export default function HistoryPanel({ transactions, onClose }: { transactions: 
       if (op.state === "DONE") {
         setNote(op.changeLost ? `Paid ${op.amount} sat. ${op.error}` : `Paid ${op.amount} sat. ${op.change || 0} sat change are back in your balance.`);
       } else if (op.state === "FAILED") {
-        setNote(op.error && op.error !== "Payment failed" ? op.error : "The mint could not pay the invoice. Your sats are back.");
+        // A refund that left out inputs spent elsewhere carries its own message with both amounts.
+        const partly = (op as { spentSat?: number }).spentSat;
+        setNote(partly && op.error ? op.error : "The mint could not pay the invoice. Your sats are back.");
       } else {
         setNote("The mint has not settled this payment yet, so the sats stay held. Check again later.");
       }
@@ -177,7 +179,7 @@ export default function HistoryPanel({ transactions, onClose }: { transactions: 
           <p className="text-[#e8fff7]">Unfinished claims ({claims.length})</p>
           <p className="mt-1 text-xs text-[#e8fff7]/50">
             The mint has not finished these, so this wallet keeps trying. Stop asks the mint first and gives the token back only if it
-            was never spent.
+            was never spent. Copy a stopped token to keep it.
           </p>
           <div className="mt-3 space-y-3">
             {claims.map((op) => (
