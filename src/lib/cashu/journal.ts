@@ -11,7 +11,9 @@
 //     makes the mint sign anything.
 //   * Inputs being spent are moved out of the spendable balance into the
 //     record first, and only returned if the mint confirms (NUT-07) they are
-//     still UNSPENT.
+//     still UNSPENT. A swap or melt spends all of its inputs or none, so when
+//     some inputs are SPENT and the rest UNSPENT, this op never ran: the
+//     UNSPENT ones go back and the SPENT ones (spent elsewhere) are dropped.
 //   * A lost reply is resolved with NUT-09 restore of the persisted outputs.
 //     NUT-07 is only used to decide what to do next. It never counts as
 //     a payment.
@@ -56,6 +58,7 @@ export type MeltOp = Base & {
   state: "PREPARED" | "PENDING" | "DONE" | "FAILED";
   change?: number;
   preimage?: string | null;
+  spentSat?: number; // FAILED because this many sat of the inputs were already spent elsewhere
 };
 export type SendOp = Base & {
   kind: "send";
@@ -68,6 +71,7 @@ export type SendOp = Base & {
   state: "PREPARED" | "DONE" | "FAILED";
   token?: string;
   claimed?: boolean; // NUT-07 said every proof of the token is SPENT: hidden from History
+  spentSat?: number; // FAILED because this many sat of the inputs were already spent elsewhere
 };
 export type ReceiveOp = Base & {
   kind: "receive";
@@ -78,6 +82,7 @@ export type ReceiveOp = Base & {
   fees: number;
   needsKey?: boolean; // P2PK inputs: only the tip board (which holds the key) can advance it
   state: "PREPARED" | "DONE" | "FAILED";
+  spentSat?: number; // FAILED because this many sat of the token were already spent
 };
 export type Op = MintOp | MeltOp | SendOp | ReceiveOp;
 
@@ -113,16 +118,31 @@ const toProof = (p: StoredProof): Proof => ({ ...p, amount: Amount.from(p.amount
 const stored = (ps: Array<Proof | ProofLike>) => ps.map(toStoredProof).filter((p): p is StoredProof => !!p);
 const newId = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 
-async function inputsStillUnspent(wallet: Wallet, inputs: StoredProof[]): Promise<boolean | null> {
+type InputStates = { unspent: StoredProof[]; spent: StoredProof[]; pending: StoredProof[] };
+
+/**
+ * NUT-07 state of each input, as a filter only. Returns null when the mint
+ * cannot answer or the reply does not cover every input: decide later.
+ */
+async function classifyInputs(wallet: Wallet, inputs: StoredProof[]): Promise<InputStates | null> {
+  let states;
   try {
-    const states = await wallet.checkProofsStates(inputs); // NUT-07, as a filter only
-    if (states.every((s) => s.state === CheckStateEnum.UNSPENT)) return true;
-    if (states.some((s) => s.state === CheckStateEnum.SPENT)) return false;
-    return null; // PENDING: decide later
+    states = await wallet.checkProofsStates(inputs); // cashu-ts returns them in input order (matched by Y)
   } catch {
     return null; // mint unreachable: decide later
   }
+  if (states.length !== inputs.length) return null;
+  const pick = (s: CheckStateEnum) => inputs.filter((_, i) => states[i]?.state === s);
+  const c = { unspent: pick(CheckStateEnum.UNSPENT), spent: pick(CheckStateEnum.SPENT), pending: pick(CheckStateEnum.PENDING) };
+  if (c.unspent.length + c.spent.length + c.pending.length !== inputs.length) return null; // unknown state
+  return c;
 }
+
+/** Some inputs SPENT, the rest UNSPENT, none PENDING: this swap or melt never ran at the mint. */
+const isMixed = (c: InputStates | null): c is InputStates => !!c && !c.pending.length && c.spent.length > 0 && c.unspent.length > 0;
+
+const partlySpentText = (c: InputStates) =>
+  `${sumProofs(c.spent).toLocaleString("en-US")} sat were already spent elsewhere. ${sumProofs(c.unspent).toLocaleString("en-US")} sat are back in your balance.`;
 
 // ---------------------------------------------------------------------------
 // Shared building blocks (also used by the tip embed)
@@ -177,14 +197,17 @@ export async function issueMint(wallet: Wallet, quoteId: string, outputs: Serial
 
 /**
  * NUT-03 swap of `inputs` into the persisted outputs. On failure, NUT-07
- * decides: inputs SPENT -> NUT-09 restore (our swap went through, or someone
- * else spent them first if restore finds nothing); otherwise retry later.
- * Returns { keep, send } proofs, or { spentElsewhere: true }.
+ * decides: all inputs SPENT -> NUT-09 restore (our swap went through, or
+ * someone else spent them first if restore finds nothing). Some SPENT and the
+ * rest UNSPENT (none PENDING) -> this swap never ran: `partlySpent` carries
+ * the split, and the caller decides what to do with the UNSPENT ones.
+ * Otherwise retry later.
+ * Returns { keep, send } proofs, or { spentElsewhere: true, partlySpent? }.
  */
 export async function swapWithRecovery(
   wallet: Wallet,
   args: { inputs: StoredProof[]; keepOutputs: SerializedOutput[]; sendOutputs?: SerializedOutput[]; keysetId: string; amount: number; fees: number; privkey?: string }
-): Promise<{ keep: Proof[]; send: Proof[] } | { spentElsewhere: true }> {
+): Promise<{ keep: Proof[]; send: Proof[] } | { spentElsewhere: true; partlySpent?: InputStates }> {
   const keepData = deserializeOutputs(args.keepOutputs);
   const sendData = deserializeOutputs(args.sendOutputs || []);
   const preview: SwapPreview = {
@@ -199,8 +222,9 @@ export async function swapWithRecovery(
     const res = await wallet.completeSwap(preview, args.privkey);
     return { keep: res.keep || [], send: res.send || [] };
   } catch (e) {
-    const unspent = await inputsStillUnspent(wallet, args.inputs);
-    if (unspent !== false) throw e; // still spendable or unknown: retry later
+    const c = await classifyInputs(wallet, args.inputs);
+    if (!c || c.pending.length || !c.spent.length) throw e; // all unspent, pending or unknown: retry later
+    if (c.unspent.length) return { spentElsewhere: true, partlySpent: c }; // a swap is atomic: ours never ran
     const keep = await restoreOutputs(wallet, keepData);
     const send = await restoreOutputs(wallet, sendData);
     if (!keep.length && !send.length) return { spentElsewhere: true };
@@ -388,10 +412,15 @@ async function advanceMeltUnlocked(id: string): Promise<MeltOp> {
     if (q.state === MeltQuoteState.PAID) return finishPaid([], q.payment_preimage, q.change);
     if (q.state === MeltQuoteState.UNPAID && mintAnswered) {
       // Without an answer, a refund now could race a request still on its way: decide on a later round.
-      const unspent = await inputsStillUnspent(wallet, op.inputs);
-      if (unspent === true) {
+      const c = await classifyInputs(wallet, op.inputs);
+      if (c && c.unspent.length === op.inputs.length) {
         addProofs(op.mint, op.inputs); // payment failed: inputs back to balance
         return putOp<MeltOp>(id, { state: "FAILED", error: op.error || "Payment failed" });
+      }
+      if (isMixed(c)) {
+        // A melt spends all of its inputs or none, so this one never ran: return the UNSPENT part.
+        addProofs(op.mint, c.unspent);
+        return putOp<MeltOp>(id, { state: "FAILED", spentSat: sumProofs(c.spent), error: `Payment failed. ${partlySpentText(c)}` });
       }
     }
     // PENDING at the mint (or inconclusive): keep inputs reserved, check again later.
@@ -438,7 +467,13 @@ async function advanceSendUnlocked(id: string): Promise<SendOp> {
       amount: op.amount,
       fees: op.fees,
     });
-    if ("spentElsewhere" in res) return putOp<SendOp>(id, { state: "FAILED", error: "Inputs were spent elsewhere" });
+    if ("spentElsewhere" in res) {
+      if (res.partlySpent) {
+        addProofs(op.mint, res.partlySpent.unspent); // this swap never ran: the UNSPENT inputs are still ours
+        return putOp<SendOp>(id, { state: "FAILED", spentSat: sumProofs(res.partlySpent.spent), error: partlySpentText(res.partlySpent) });
+      }
+      return putOp<SendOp>(id, { state: "FAILED", error: "Inputs were spent elsewhere" });
+    }
     const token = getEncodedToken({ mint: op.mint, proofs: res.send, unit: "sat" });
     // Token first (so it is never lost), then the change back into the balance.
     putOp<SendOp>(id, { token });
@@ -449,15 +484,26 @@ async function advanceSendUnlocked(id: string): Promise<SendOp> {
   }
 }
 
-/** Give up on a send that never reached the mint: only if NUT-07 says inputs are UNSPENT. */
+/**
+ * Give up on a send that never reached the mint. NUT-07 decides: inputs all
+ * UNSPENT -> returned. Some SPENT and the rest UNSPENT -> the swap never ran,
+ * so the UNSPENT ones are returned and the SPENT ones dropped. Anything else
+ * (all SPENT, PENDING, no answer) goes through the normal recovery.
+ */
 async function cancelSendUnlocked(id: string): Promise<SendOp> {
   const op = getOp(id) as SendOp;
   if (op.state !== "PREPARED") return op;
   const wallet = await getWallet(op.mint);
-  const unspent = await inputsStillUnspent(wallet, op.inputs);
-  if (unspent !== true) return advanceSendUnlocked(id);
-  addProofs(op.mint, op.inputs);
-  return putOp<SendOp>(id, { state: "FAILED", error: "Cancelled" });
+  const c = await classifyInputs(wallet, op.inputs);
+  if (c && c.unspent.length === op.inputs.length) {
+    addProofs(op.mint, op.inputs);
+    return putOp<SendOp>(id, { state: "FAILED", error: "Cancelled" });
+  }
+  if (isMixed(c)) {
+    addProofs(op.mint, c.unspent);
+    return putOp<SendOp>(id, { state: "FAILED", spentSat: sumProofs(c.spent), error: partlySpentText(c) });
+  }
+  return advanceSendUnlocked(id);
 }
 
 // ---------------------------------------------------------------------------
@@ -541,6 +587,14 @@ export async function advanceReceiveUnlocked(id: string, privkey?: string): Prom
       privkey,
     });
     if ("spentElsewhere" in res) {
+      if (res.partlySpent) {
+        // The token's proofs are not ours: nothing is added. Claiming again drops the spent ones (dropSpentProofs).
+        return putOp<ReceiveOp>(id, {
+          state: "FAILED",
+          spentSat: sumProofs(res.partlySpent.spent),
+          error: `Part of this token (${sumProofs(res.partlySpent.spent).toLocaleString("en-US")} sat) was already spent. Claim the token again to receive the rest.`,
+        });
+      }
       return putOp<ReceiveOp>(id, { state: "FAILED", error: "Token was already spent" });
     }
     const proofs = [...res.keep, ...res.send];
@@ -632,7 +686,7 @@ export const advanceMelt = (id: string) => withWalletLock(() => advanceMeltUnloc
 /** Create a token (NUT-03). Spendable proofs are read inside the lock. */
 export const startSend = (mint: string, amount: number) => withWalletLock(() => startSendUnlocked(mint, amount));
 export const advanceSend = (id: string) => withWalletLock(() => advanceSendUnlocked(id));
-/** Give up on a send that never reached the mint: only if NUT-07 says inputs are UNSPENT. */
+/** Give up on a send that never reached the mint: returns whatever NUT-07 says is still UNSPENT. */
 export const cancelSend = (id: string) => withWalletLock(() => cancelSendUnlocked(id));
 
 export const startReceive = (token: string, opts: { privkey?: string; id?: string } = {}) =>

@@ -1,7 +1,7 @@
 // src/components/wallet/HistoryPanel.tsx
 // Local activity list plus every token this wallet created (from the journal),
-// and sends the mint never confirmed, with a Cancel that only returns the sats
-// when the mint says they are unspent (journal cancelSend, NUT-07). On open,
+// and sends the mint never confirmed, with a Cancel that returns the sats the
+// mint says are unspent (journal cancelSend, NUT-07). On open,
 // sent tokens the mint reports fully spent (claimed) are hidden; a mint that
 // does not answer leaves its tokens listed.
 // MIT License
@@ -46,9 +46,11 @@ export default function HistoryPanel({ transactions, onClose }: { transactions: 
     setBusy(id);
     setNote("");
     try {
-      const op = await cancelSend(id); // returns the sats only if NUT-07 says the inputs are UNSPENT
+      const op = await cancelSend(id); // returns the inputs NUT-07 says are UNSPENT
       if (op.state === "FAILED" && op.error === "Cancelled") {
         setNote(`Cancelled. ${sumProofs(op.inputs).toLocaleString("en-US")} sat are back in your balance.`);
+      } else if (op.state === "FAILED" && op.spentSat) {
+        setNote(op.error || "Some of these sats were already spent elsewhere. The rest are back in your balance.");
       } else if (op.state === "FAILED") {
         setNote("The mint says these sats were already spent elsewhere, so there is nothing to return.");
       } else if (op.state === "DONE") {
@@ -75,8 +77,8 @@ export default function HistoryPanel({ transactions, onClose }: { transactions: 
         <div className="mb-4 rounded-2xl border border-amber-300/30 bg-amber-300/5 p-4" data-testid="stuck-sends">
           <p className="text-[#e8fff7]">Unfinished sends ({stuck.length})</p>
           <p className="mt-1 text-xs text-[#e8fff7]/50">
-            The mint has not confirmed these, so their sats are held back. Cancel asks the mint first and returns the sats only if
-            they were never spent.
+            The mint has not confirmed these, so their sats are held back. Cancel asks the mint first and returns the sats that were
+            never spent.
           </p>
           <div className="mt-3 space-y-3">
             {stuck.map((op) => (
