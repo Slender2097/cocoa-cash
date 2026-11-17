@@ -142,7 +142,9 @@ async function classifyInputs(wallet: Wallet, inputs: StoredProof[]): Promise<In
 const isMixed = (c: InputStates | null): c is InputStates => !!c && !c.pending.length && c.spent.length > 0 && c.unspent.length > 0;
 
 const partlySpentText = (c: InputStates) =>
-  `${sumProofs(c.spent).toLocaleString("en-US")} sat were already spent elsewhere. ${sumProofs(c.unspent).toLocaleString("en-US")} sat are back in your balance.`;
+  c.unspent.length
+    ? `${sumProofs(c.spent).toLocaleString("en-US")} sat were already spent elsewhere. ${sumProofs(c.unspent).toLocaleString("en-US")} sat are back in your balance.`
+    : `${sumProofs(c.spent).toLocaleString("en-US")} sat were already spent elsewhere, so there is nothing to return.`;
 
 // ---------------------------------------------------------------------------
 // Shared building blocks (also used by the tip embed)
@@ -417,8 +419,9 @@ async function advanceMeltUnlocked(id: string): Promise<MeltOp> {
         addProofs(op.mint, op.inputs); // payment failed: inputs back to balance
         return putOp<MeltOp>(id, { state: "FAILED", error: op.error || "Payment failed" });
       }
-      if (isMixed(c)) {
-        // A melt spends all of its inputs or none, so this one never ran: return the UNSPENT part.
+      if (c && !c.pending.length && c.spent.length) {
+        // A melt spends all of its inputs or none, and this quote is UNPAID, so the SPENT ones were spent
+        // elsewhere and this melt never ran: return the UNSPENT part (if any), drop the rest.
         addProofs(op.mint, c.unspent);
         return putOp<MeltOp>(id, { state: "FAILED", spentSat: sumProofs(c.spent), error: `Payment failed. ${partlySpentText(c)}` });
       }
