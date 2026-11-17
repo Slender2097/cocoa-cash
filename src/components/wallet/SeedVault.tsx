@@ -165,6 +165,8 @@ export default function SeedVault({
           <p className="text-xs leading-relaxed text-[#e8fff7]/45">
             Your sats are the ecash proofs saved in this browser. Sats you get from now on can be restored with these 12
             words and the list of your mints. Sats from before this update cannot: keep a copy of those with Back up balance.
+            Use these 12 words in one browser at a time. Two browsers using the same words can show the same sats twice and
+            make payments fail.
           </p>
         </div>
       )}
@@ -213,7 +215,7 @@ export default function SeedVault({
 
       {view === "reveal" && (
         <div className="space-y-4">
-          <p className="text-sm text-[#e8fff7]/70">Write these down in order. Anyone with them can replace your phrase.</p>
+          <p className="text-sm text-[#e8fff7]/70">Write these down in order. Anyone with these words can take the sats they restore. Use them in one browser at a time.</p>
           <WordGrid words={words} />
           <CopyButton text={mnemonic} label="Copy 12 words" />
           <button className="btn-neon" onClick={startConfirm}>

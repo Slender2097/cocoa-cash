@@ -17,7 +17,7 @@
 // MIT License
 
 import * as bip39 from "bip39";
-import { CheckStateEnum } from "@cashu/cashu-ts";
+import { CheckStateEnum, getDecodedToken } from "@cashu/cashu-ts";
 import { addProofs, normalizeMint, readJSON, readProofs, rememberMint } from "./storage";
 import { getWallet, errText, fromHex } from "./outputs";
 import type { SerializedOutput } from "./outputs";
@@ -62,6 +62,14 @@ export function phraseChangeAtRisk(words: string): boolean {
 
 const decoder = new TextDecoder();
 const secretOf = (o: SerializedOutput) => decoder.decode(fromHex(o.s));
+// A pruned send keeps only its token (journal pruneJournal): read the secrets from it.
+const tokenSecrets = (token: string, keysetId: string): string[] => {
+  try {
+    return getDecodedToken(token, [keysetId]).proofs.map((p) => p.secret);
+  } catch {
+    return [];
+  }
+};
 
 /**
  * Secrets this browser has already handed on or reserved: inputs of open
@@ -72,7 +80,10 @@ const secretOf = (o: SerializedOutput) => decoder.decode(fromHex(o.s));
 function journalSecrets(): Set<string> {
   const out = new Set<string>();
   for (const op of listOps()) {
-    if (op.kind === "send" && op.state !== "FAILED") op.sendOutputs.forEach((o) => out.add(secretOf(o)));
+    if (op.kind === "send" && op.state !== "FAILED") {
+      op.sendOutputs.forEach((o) => out.add(secretOf(o)));
+      if (!op.sendOutputs.length && op.token) tokenSecrets(op.token, op.keysetId).forEach((x) => out.add(x)); // pruned record
+    }
     if ("inputs" in op && !["DONE", "FAILED", "EXPIRED"].includes(op.state)) op.inputs.forEach((p) => out.add(p.secret));
   }
   return out;

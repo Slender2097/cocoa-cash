@@ -19,7 +19,7 @@ The other header glyphs open Mints, History and the Seed vault. The Mints screen
 
 ## Backup
 
-- The 12 words in the Seed vault restore sats received after the NUT-13 change. After the first receive, a one-time card shows the 12 words.
+- The 12 words in the Seed vault restore sats received after the NUT-13 change, together with the list of mints you used. Use them in one browser at a time. After the first receive, a one-time card shows the 12 words.
 - **Back up balance** in the Seed vault exports Cashu tokens for older sats, which the 12 words cannot restore.
 - Clearing site data deletes the wallet.
 

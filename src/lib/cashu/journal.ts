@@ -56,6 +56,8 @@ export type MeltOp = Base & {
   state: "PREPARED" | "PENDING" | "DONE" | "FAILED";
   change?: number;
   preimage?: string | null;
+  changeTries?: number; // paid, but the change could not be fetched yet (see finishPaid)
+  changeLost?: boolean; // paid; the mint cannot return the change, so it was given up (change 0)
 };
 export type SendOp = Base & {
   kind: "send";
@@ -106,6 +108,41 @@ export function putOp<T extends Op>(id: string, patch: Partial<T>): T {
 const isOpen = (op: Op) => !["DONE", "FAILED", "EXPIRED"].includes(op.state);
 export const openOps = (mint?: string) =>
   listOps().filter((o) => isOpen(o) && (!mint || normalizeMint(o.mint) === normalizeMint(mint)));
+
+// ---------------------------------------------------------------------------
+// Pruning (M5). The journal is one localStorage key that every putOp rewrites,
+// so finished operations are dropped after a while. Runs under the lock.
+// ---------------------------------------------------------------------------
+
+const PRUNE_AFTER_MS = 30 * 24 * 60 * 60_000;
+
+/**
+ * Delete DONE, FAILED and EXPIRED operations older than 30 days. Two kinds are
+ * kept, with their blinding data and inputs dropped:
+ *   * a send whose token was not seen claimed: the token is the user's money,
+ *     and journalSecrets (restore.ts) reads its secrets from the token;
+ *   * a receive the user stopped: its inputs are the token handed back.
+ * Open operations are never touched. Returns how many records changed.
+ */
+function pruneJournalUnlocked(now = Date.now()): number {
+  const all = readJSON<Record<string, Op>>(JOURNAL, {});
+  let changed = 0;
+  for (const [id, op] of Object.entries(all)) {
+    if (isOpen(op) || now - (op.updatedAt ?? op.createdAt) < PRUNE_AFTER_MS) continue;
+    if (op.kind === "send" && op.token && !op.claimed) {
+      if (!op.inputs.length && !op.keepOutputs.length && !op.sendOutputs.length) continue; // already slim
+      all[id] = { ...op, inputs: [], keepOutputs: [], sendOutputs: [] };
+    } else if (op.kind === "receive" && op.error === STOPPED) {
+      if (!op.outputs.length) continue;
+      all[id] = { ...op, outputs: [] };
+    } else {
+      delete all[id];
+    }
+    changed++;
+  }
+  if (changed) writeJSON(JOURNAL, all);
+  return changed;
+}
 
 // cashu-ts wants Amount objects; we store numbers.
 export const toProofLike = (p: StoredProof): ProofLike => ({ ...p, amount: p.amount });
@@ -327,6 +364,19 @@ async function startMeltUnlocked(mint: string, invoice: string, quote: MeltQuote
   return advanceMeltUnlocked(op.id);
 }
 
+// A paid melt whose change could not be fetched this many rounds (about a
+// minute of background checks, or "Check again" presses), from a mint that
+// does not list NUT-09, is closed as DONE with no change.
+const CHANGE_GIVE_UP_TRIES = 20;
+export const CHANGE_LOST = "The mint paid the invoice but did not return the change, and it cannot restore it.";
+const mintCanRestore = (wallet: Wallet): boolean => {
+  try {
+    return wallet.getMintInfo().isSupported(9).supported;
+  } catch {
+    return true; // unknown: keep trying
+  }
+};
+
 async function advanceMeltUnlocked(id: string): Promise<MeltOp> {
   let op = getOp(id) as MeltOp;
   const wallet = await getWallet(op.mint);
@@ -346,7 +396,12 @@ async function advanceMeltUnlocked(id: string): Promise<MeltOp> {
       try {
         change = await restoreOutputs(wallet, outputData); // NUT-09 for NUT-08 change
       } catch (e) {
-        return putOp<MeltOp>(id, { state: "PENDING", error: errText(e) }); // paid; fetch change later
+        const tries = ((getOp(id) as MeltOp).changeTries || 0) + 1;
+        if (tries >= CHANGE_GIVE_UP_TRIES && !mintCanRestore(wallet)) {
+          // Paid, and a mint without NUT-09 will never hand the change out: stop asking.
+          return putOp<MeltOp>(id, { state: "DONE", change: 0, changeLost: true, changeTries: tries, preimage: preimage ?? null, error: CHANGE_LOST });
+        }
+        return putOp<MeltOp>(id, { state: "PENDING", changeTries: tries, error: errText(e) }); // paid; fetch change later
       }
     }
     addProofs(op.mint, change);
@@ -551,6 +606,28 @@ export async function advanceReceiveUnlocked(id: string, privkey?: string): Prom
   }
 }
 
+export const STOPPED = "Stopped";
+
+/** The token a receive was claiming, rebuilt from its inputs (for "Stop" in History). */
+export const receiveToken = (op: ReceiveOp): string =>
+  getEncodedToken({ mint: op.mint, proofs: op.inputs.map(toProof), unit: "sat" });
+
+/**
+ * Stop retrying a claim and hand the token back. Only when NUT-07 says every
+ * input is still UNSPENT: if the swap went through (a lost reply), the op is
+ * advanced instead so NUT-09 can recover the sats. Mint unreachable or
+ * PENDING: nothing changes.
+ */
+async function stopReceiveUnlocked(id: string): Promise<ReceiveOp> {
+  const op = getOp(id) as ReceiveOp;
+  if (op.state !== "PREPARED") return op;
+  const wallet = await getWallet(op.mint);
+  const unspent = await inputsStillUnspent(wallet, op.inputs);
+  if (unspent === false) return advanceReceiveUnlocked(id); // the swap may have gone through: recover it
+  if (unspent !== true) return op;
+  return putOp<ReceiveOp>(id, { state: "FAILED", error: STOPPED });
+}
+
 // ---------------------------------------------------------------------------
 
 /**
@@ -638,6 +715,11 @@ export const cancelSend = (id: string) => withWalletLock(() => cancelSendUnlocke
 export const startReceive = (token: string, opts: { privkey?: string; id?: string } = {}) =>
   withWalletLock(() => startReceiveUnlocked(token, opts));
 export const advanceReceive = (id: string, privkey?: string) => withWalletLock(() => advanceReceiveUnlocked(id, privkey));
+/** Stop a claim that keeps failing and return its token (History "Stop"). */
+export const stopReceive = (id: string) => withWalletLock(() => stopReceiveUnlocked(id));
+
+/** Prune finished operations older than 30 days (once per page load). */
+export const pruneJournal = () => withWalletLock(async () => pruneJournalUnlocked());
 
 /**
  * Resume every open operation for a mint. On connect it waits for the lock.

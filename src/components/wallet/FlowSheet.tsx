@@ -74,11 +74,12 @@ export default function FlowSheet({
       setStage({ k: "confirm-claim", token: d.token, mint: d.mint, amount: d.amount ?? 0, trusted: false });
     } else if (type === "mint" && d.type === "mint") {
       setStage({ k: "done", title: "Sats received", lines: [`+${d.amount ?? ""} sat`] });
-    } else if (type === "melt" && d.type === "melt-pending") {
+    } else if ((type === "melt" && d.type === "melt-pending") || (type === "send" && d.type === "swap-send-pending") || (type === "claim" && d.type === "claim-pending")) {
       setStage({ k: "pending", title: d.status || "Payment pending", detail: d.details || "" });
     } else if (type === "melt" && d.type === "melt") {
       const lines = [`Paid ${d.amount} sat`, `Fee reserve ${d.feeReserve ?? 0} sat`];
       if (d.changeReceived) lines.push(`Change returned ${d.changeReceived} sat`);
+      if (d.details) lines.push(d.details); // e.g. the mint could not return the change
       setStage({ k: "done", title: "Invoice paid", lines });
     } else if (type === "send" && d.token) {
       setStage({ k: "token", token: d.token, amount: d.amount || 0 });
@@ -241,7 +242,7 @@ export default function FlowSheet({
           <QrPlate value={`lightning:${stage.invoice}`} />
           <p className="readout max-h-20 overflow-y-auto text-left">{stage.invoice}</p>
           <CopyButton text={stage.invoice} label="Copy invoice" primary />
-          <p className="text-xs text-[#e8fff7]/45">You can close this. The sats arrive as soon as it is paid.</p>
+          <p className="text-xs text-[#e8fff7]/45">You can close this. Once it is paid, the sats arrive the next time this wallet is open in this browser.</p>
         </div>
       )}
 
