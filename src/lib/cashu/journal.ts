@@ -167,8 +167,13 @@ const SYNC_MARGIN = 100;
 async function syncCounter(wallet: Wallet, mint: string, keysetId: string, collided: boolean): Promise<void> {
   const counters = counterSource(mint, currentSeed().fp);
   const { start } = await counters.reserve(keysetId, 0); // a peek, changes nothing
-  const res = await wallet.batchRestore(SYNC_GAP_LIMIT, undefined, start, keysetId); // NUT-09, proofs discarded
-  const last = res.lastCounterWithSignature;
+  let last: number | undefined;
+  try {
+    last = (await wallet.batchRestore(SYNC_GAP_LIMIT, undefined, start, keysetId)).lastCounterWithSignature; // NUT-09, proofs discarded
+  } catch (e) {
+    if (!collided) throw e;
+    last = undefined; // no NUT-09 answer: still move past the refused counters, so a retry can get further
+  }
   if (last === undefined && !collided) return;
   await counters.advanceToAtLeast(keysetId, (last === undefined ? start : last + 1) + SYNC_MARGIN);
   rememberUsedMint(mint);
